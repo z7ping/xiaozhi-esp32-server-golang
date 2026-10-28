@@ -50,6 +50,7 @@ func(p *Provider) TextToSpeechStream(ctx context.Context,text string,rate int,ch
 	p.mu.RLock()
 	options:=p.options
 	p.mu.RUnlock()
+	if err:=options.Validate(text);err!=nil{return nil,err}
 	reader,writer:=io.Pipe()
 	output:=make(chan []byte,100)
 	decoder,err:=util.CreateAudioDecoderWithSampleRate(ctx,reader,output,duration,"pcm",rate)
