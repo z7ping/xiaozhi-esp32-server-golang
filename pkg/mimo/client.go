@@ -123,8 +123,35 @@ type SpeechOptions struct {
 	ReferenceAudioPath string
 }
 
+// Validate checks the options before the provider starts an asynchronous stream.
+func (o SpeechOptions) Validate(text string) error {
+	if strings.TrimSpace(text)=="" { return errors.New("MiMo TTS text is empty") }
+	model:=o.Model
+	if model=="" { model="mimo-v2.5-tts" }
+	switch model {
+	case "mimo-v2.5-tts":
+		return nil
+	case "mimo-v2.5-tts-voicedesign":
+		if strings.TrimSpace(o.Prompt)=="" { return errors.New("MiMo VoiceDesign requires voice_prompt") }
+	case "mimo-v2.5-tts-voiceclone":
+		if o.ReferenceAudioPath=="" { return errors.New("MiMo VoiceClone requires reference_audio_path") }
+		switch strings.ToLower(filepath.Ext(o.ReferenceAudioPath)) {
+		case ".wav", ".mp3":
+		default: return errors.New("MiMo reference audio must be WAV or MP3")
+		}
+		info,err:=os.Stat(o.ReferenceAudioPath)
+		if err!=nil { return fmt.Errorf("stat MiMo reference audio: %w",err) }
+		if !info.Mode().IsRegular() || info.Size()<=0 || info.Size()>MaxBase64Bytes*3/4 {
+			return errors.New("MiMo reference audio must be a regular non-empty file below 7.5 MB")
+		}
+	default:
+		return fmt.Errorf("unsupported MiMo TTS model %q",model)
+	}
+	return nil
+}
+
 func (o SpeechOptions) requestBody(text string) (map[string]any,error) {
-	if strings.TrimSpace(text)=="" { return nil,errors.New("MiMo TTS text is empty") }
+	if err:=o.Validate(text);err!=nil { return nil,err }
 	if o.Model=="" { o.Model="mimo-v2.5-tts" }
 	audio:=map[string]any{"format":"pcm16"}
 	messages:=[]any{}
