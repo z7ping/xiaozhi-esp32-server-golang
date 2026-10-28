@@ -86,7 +86,11 @@ func GetTTSProvider(providerName string, config map[string]interface{}) (TTSProv
 	case constants.TtsTypeAliyunQwen:
 		baseProvider = qwen.NewQwenTTSProvider(config)
 	case constants.TtsTypeMiMo:
-		baseProvider = mimo.NewProvider(config)
+		provider := mimo.NewProvider(config)
+		if provider == nil {
+			return nil, fmt.Errorf("MiMo TTS 初始化失败，请检查 API Key 和 API URL")
+		}
+		baseProvider = provider
 	case constants.TtsTypeIndexTTSVLLM:
 		baseProvider = openai.NewOpenAITTSProvider(buildIndexTTSOpenAIConfig(config))
 	default:
