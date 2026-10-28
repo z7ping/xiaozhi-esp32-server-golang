@@ -187,7 +187,7 @@ asr:
 
 # 文本转语音（TTS）配置
 tts:
-  provider: "doubao_ws"  # TTS提供商：xiaozhi/doubao/doubao_ws/cosyvoice/edge/edge_offline/xunfei/xunfei_super_tts
+  provider: "edge"  # TTS提供商：xiaozhi/doubao/doubao_ws/cosyvoice/edge/edge_offline/xunfei/xunfei_super_tts
   openai:  #openai兼容格式的tts服务, 这里使用硅基流动服务
     api_key: "xxxx" #apikey
     api_url: "https://api.siliconflow.cn/v1/audio/speech"
@@ -378,12 +378,26 @@ mcp:
       - name: "filesystem"
         type: "sse"                           # 连接类型：SSE
         url: "http://localhost:3001/sse"      # 服务器地址
-        enabled: true                         # 是否启用
+        enabled: false                        # 是否启用
       # 内存MCP服务器
       - name: "memory"
         type: "streamablehttp"                # 连接类型：流式HTTP
         url: "http://localhost:3002/mcp"      # 服务器地址
-        enabled: true                         # 是否启用
+        enabled: false                        # 是否启用
+      - name: "jellyfin"
+        type: "streamablehttp"
+        url: "http://jellyfin-mcp:8080/mcp"
+        enabled: true
+        allowed_tools:
+          - jellyfin_analytics
+          - jellyfin_download_link
+          - jellyfin_get_item
+          - jellyfin_item_extras
+          - jellyfin_libraries
+          - jellyfin_music
+          - jellyfin_people
+          - jellyfin_recommendations
+          - jellyfin_search
     reconnect_interval: 300      # 重连间隔（秒）
     max_reconnect_attempts: 10   # 最大重连尝试次数
 
@@ -431,5 +445,5 @@ wakeup_words:
 
 voice_identify:
   enable: true
-  base_url: "http://192.168.208.214:8080"
+  base_url: "http://voice-server:9000"
   threshold: 0.4  # 声纹识别阈值，范围 0.0-1.0，默认 0.6

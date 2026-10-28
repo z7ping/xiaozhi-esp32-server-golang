@@ -7,3 +7,6 @@ node_modules/
 config_shijingbo.json
 config_shijingbo.yaml
 .idea
+docker/docker-composer/.env
+docker/docker-composer/docker-compose.yml.bak
+logs/
