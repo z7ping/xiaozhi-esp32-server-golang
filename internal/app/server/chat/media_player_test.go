@@ -85,6 +85,16 @@ func TestNormalizeMusicPlaybackActionSupportsPlayPlaylist(t *testing.T) {
 	}
 }
 
+func TestDeriveMediaTitleDoesNotExposeAudioToken(t *testing.T) {
+	source := MediaSourceDescriptor{
+		SourceType: MediaSourceTypeHTTPURL,
+		HTTP:       &HTTPMediaSource{URL: "http://jellyfin-mcp:8080/audio/temporary-secret-token"},
+	}
+	if got := deriveMediaTitle(source); got != "网络音频" {
+		t.Fatalf("unexpected title for tokenized URL: %q", got)
+	}
+}
+
 func TestDeviceMediaRuntimeJumpToRelativeWrapsAroundPlaylist(t *testing.T) {
 	coordinator := newMediaPlaybackCoordinator()
 	runtime := coordinator.getOrCreateRuntime("device-test")
@@ -131,6 +141,33 @@ func TestDeviceMediaRuntimeJumpToRelativeWrapsAroundPlaylist(t *testing.T) {
 		t.Fatalf("expected wrapped prev title song-c, got %q", state.CurrentTitle)
 	}
 
+	stopRuntimeAndWait(t, runtime)
+}
+
+func TestDeviceMediaRuntimeJumpToRelativeStandaloneQueue(t *testing.T) {
+	coordinator := newMediaPlaybackCoordinator()
+	runtime := coordinator.getOrCreateRuntime("device-standalone-test")
+	sources := []MediaSourceDescriptor{
+		{Title: "song-a", SourceType: MediaSourceTypeHTTPURL, HTTP: &HTTPMediaSource{URL: "http://example.invalid/a.mp3"}},
+		{Title: "song-b", SourceType: MediaSourceTypeHTTPURL, HTTP: &HTTPMediaSource{URL: "http://example.invalid/b.mp3"}},
+	}
+	if err := runtime.ReplaceStandaloneQueueAndPlay(context.Background(), sources, 0, mediaPlaybackAudioConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.jumpToRelative(context.Background(), 1, mediaPlaybackAudioConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	state := runtime.GetState()
+	if state.CurrentIndex != 1 || state.CurrentTitle != "song-b" || len(state.Playlist) != 2 {
+		t.Fatalf("unexpected state after next: index=%d title=%q length=%d", state.CurrentIndex, state.CurrentTitle, len(state.Playlist))
+	}
+	if err := runtime.jumpToRelative(context.Background(), -1, mediaPlaybackAudioConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	state = runtime.GetState()
+	if state.CurrentIndex != 0 || state.CurrentTitle != "song-a" {
+		t.Fatalf("unexpected state after previous: index=%d title=%q", state.CurrentIndex, state.CurrentTitle)
+	}
 	stopRuntimeAndWait(t, runtime)
 }
 

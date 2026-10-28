@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -745,8 +744,8 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandle(ctx context
 	r.pauseReason = mediaPauseReasonNone
 	r.resumeOnAttach = false
 	r.state.Status = play_music.StatusPlaying
-	r.state.Playlist = nil
-	r.state.CurrentIndex = -1
+	r.state.Playlist = cloneMediaPlaylistItems(items)
+	r.state.CurrentIndex = startIndex
 	r.state.CurrentTitle = items[startIndex].Source.Title
 	r.state.CurrentSourceType = items[startIndex].Source.SourceType
 	r.state.PositionMs = 0
@@ -1167,13 +1166,18 @@ func (r *deviceMediaRuntime) jumpToRelative(ctx context.Context, delta int, cfg 
 	mode := r.mode
 	agentID := r.playlistAgentID
 	currentIndex := r.playbackIndex
+	standaloneItems := cloneMediaPlaylistItems(r.standaloneItems)
 	r.mu.RUnlock()
 
-	if mode != mediaPlaybackModeAgentPlaylist {
-		return fmt.Errorf("当前播放未加入智能体播放列表，请先执行 enqueue_current")
+	var snapshot []MediaPlaylistItem
+	switch mode {
+	case mediaPlaybackModeAgentPlaylist:
+		snapshot = r.coordinator.snapshotAgentPlaylist(agentID)
+	case mediaPlaybackModeStandalone:
+		snapshot = standaloneItems
+	default:
+		return fmt.Errorf("当前没有可切换的播放列表")
 	}
-
-	snapshot := r.coordinator.snapshotAgentPlaylist(agentID)
 	if len(snapshot) == 0 {
 		return fmt.Errorf("播放列表为空")
 	}
@@ -1191,6 +1195,13 @@ func (r *deviceMediaRuntime) jumpToRelative(ctx context.Context, delta int, cfg 
 		nextIndex += len(snapshot)
 	}
 
+	if mode == mediaPlaybackModeStandalone {
+		sources := make([]MediaSourceDescriptor, len(snapshot))
+		for i, item := range snapshot {
+			sources[i] = cloneMediaSourceDescriptor(item.Source)
+		}
+		return r.ReplaceStandaloneQueueAndPlay(ctx, sources, nextIndex, cfg)
+	}
 	return r.PlayAgentPlaylistIndex(ctx, agentID, nextIndex, cfg)
 }
 
@@ -1213,6 +1224,13 @@ func (r *deviceMediaRuntime) refreshPublicStateLocked() {
 		if len(snapshot) == 0 {
 			r.state.CurrentIndex = -1
 		} else if r.playbackIndex >= 0 && r.playbackIndex < len(snapshot) {
+			r.state.CurrentIndex = r.playbackIndex
+		} else {
+			r.state.CurrentIndex = -1
+		}
+	case mediaPlaybackModeStandalone:
+		r.state.Playlist = cloneMediaPlaylistItems(r.standaloneItems)
+		if r.playbackIndex >= 0 && r.playbackIndex < len(r.standaloneItems) {
 			r.state.CurrentIndex = r.playbackIndex
 		} else {
 			r.state.CurrentIndex = -1
@@ -1958,13 +1976,7 @@ func deriveMediaTitle(source MediaSourceDescriptor) string {
 	switch source.SourceType {
 	case MediaSourceTypeHTTPURL:
 		if source.HTTP != nil {
-			if parsed, err := url.Parse(source.HTTP.URL); err == nil {
-				if base := strings.TrimSpace(parsed.Path); base != "" {
-					parts := strings.Split(base, "/")
-					return strings.TrimSpace(parts[len(parts)-1])
-				}
-			}
-			return strings.TrimSpace(source.HTTP.URL)
+			return "网络音频"
 		}
 	case MediaSourceTypeLocalFile:
 		if source.Local != nil {

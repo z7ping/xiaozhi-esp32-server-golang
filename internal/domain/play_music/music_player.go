@@ -2,10 +2,12 @@ package play_music
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"sync"
 	"time"
 
@@ -61,7 +63,7 @@ func PlayMusicStream(ctx context.Context, url string, sampleRate int, frameDurat
 	// 创建HTTP请求
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %v", err)
+		return nil, errors.New("创建音乐请求失败")
 	}
 
 	req.Header.Set("Accept", "audio/*")
@@ -78,6 +80,10 @@ func PlayMusicStream(ctx context.Context, url string, sampleRate int, frameDurat
 		// 发送请求
 		resp, err := client.Do(req)
 		if err != nil {
+			var urlErr *neturl.Error
+			if errors.As(err, &urlErr) {
+				err = urlErr.Err
+			}
 			log.Errorf("发送请求失败: %v", err)
 			close(outputChan)
 			return
@@ -115,7 +121,7 @@ func PlayMusicStream(ctx context.Context, url string, sampleRate int, frameDurat
 			return
 		}
 
-		log.Infof("开始播放音乐: %s", url)
+		log.Infof("开始播放音乐")
 
 		// 根据音频格式处理流式响应
 		if audioFormat == "mp3" {
@@ -135,7 +141,7 @@ func PlayMusicStream(ctx context.Context, url string, sampleRate int, frameDurat
 
 			select {
 			case <-ctx.Done():
-				log.Debugf("音乐播放取消, URL: %s", url)
+				log.Debugf("音乐播放取消")
 				return
 			default:
 				log.Infof("音乐播放完成耗时: %d ms", time.Now().UnixMilli()-startTs)
