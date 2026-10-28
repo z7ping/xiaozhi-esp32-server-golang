@@ -80,3 +80,20 @@ func TestVoiceModels(t *testing.T){
 	audio:=clone["audio"].(map[string]any)
 	if !strings.HasPrefix(audio["voice"].(string),"data:audio/wav;base64,"){t.Fatal("reference audio not embedded")}
 }
+
+func TestASRBase64Limit(t *testing.T) {
+	_, err := WAV16(make([]float32, MaxASRSamples+1), 16000)
+	if err == nil { t.Fatal("ASR audio above the 10MB encoded limit must be rejected") }
+}
+
+func TestInvalidSpeechOptions(t *testing.T) {
+	if err := (SpeechOptions{Model:"unknown"}).Validate("hello"); err == nil {
+		t.Fatal("unknown model must fail before streaming")
+	}
+	if err := (SpeechOptions{Model:"mimo-v2.5-tts-voicedesign"}).Validate("hello"); err == nil {
+		t.Fatal("VoiceDesign requires a prompt")
+	}
+	if err := (SpeechOptions{Model:"mimo-v2.5-tts-voiceclone",ReferenceAudioPath:"/not/a/real/file.wav"}).Validate("hello"); err == nil {
+		t.Fatal("VoiceClone needs a real audio file")
+	}
+}
