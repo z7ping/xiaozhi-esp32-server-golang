@@ -297,6 +297,8 @@ func (f *Funasr) recvResult(ctx context.Context, conn *websocket.Conn, streamID 
 	defer func() {
 		close(resultChan)
 	}()
+	stopCancel := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stopCancel()
 
 	for {
 		select {
