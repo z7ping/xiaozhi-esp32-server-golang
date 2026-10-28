@@ -19,7 +19,9 @@ import (
 )
 
 const DefaultURL = "https://api.xiaomimimo.com/v1/chat/completions"
-const MaxBase64Bytes = 10 * 1024 * 1024
+// Xiaomi documents a 10 MB limit on Base64-encoded input; use decimal MB.
+const MaxBase64Bytes = 10_000_000
+const MaxASRSamples = (MaxBase64Bytes*3/4 - 44) / 2
 
 // Client uses the chat/completions API shared by MiMo ASR and TTS.
 type Client struct {
@@ -62,8 +64,8 @@ func (c *Client) request(ctx context.Context, body any) (*http.Response, error) 
 func WAV16(pcm []float32, sampleRate int) ([]byte, error) {
 	if sampleRate <= 0 { return nil, errors.New("invalid sample rate") }
 	if len(pcm) == 0 { return nil, errors.New("empty audio") }
-	if len(pcm) > (MaxBase64Bytes*3/4-48)/2 {
-		return nil, errors.New("MiMo ASR audio exceeds 10 MiB base64 limit")
+	if len(pcm) > MaxASRSamples {
+		return nil, errors.New("MiMo ASR audio exceeds 10 MB base64 limit")
 	}
 	size := len(pcm)*2
 	wav := make([]byte, 44+size)
@@ -137,15 +139,22 @@ func (o SpeechOptions) requestBody(text string) (map[string]any,error) {
 			audio["voice"]=o.Voice
 		case "mimo-v2.5-tts-voiceclone":
 			if o.ReferenceAudioPath=="" { return nil,errors.New("MiMo VoiceClone requires reference_audio_path") }
-			data,err:=os.ReadFile(o.ReferenceAudioPath)
-			if err!=nil { return nil,fmt.Errorf("read MiMo reference audio: %w",err) }
+			// Reject over-limit files before reading them into memory.
+			info,err:=os.Stat(o.ReferenceAudioPath)
+			if err!=nil { return nil,fmt.Errorf("stat MiMo reference audio: %w",err) }
+			if !info.Mode().IsRegular() || info.Size()<=0 || info.Size()>MaxBase64Bytes*3/4 {
+				return nil,errors.New("MiMo reference audio must be a regular non-empty file below 7.5 MB")
+			}
 			var mime string
 			switch strings.ToLower(filepath.Ext(o.ReferenceAudioPath)) {
 			case ".wav": mime="audio/wav"
 			case ".mp3": mime="audio/mpeg"
 			default: return nil,errors.New("MiMo reference audio must be WAV or MP3")
 			}
-			if (len(data)+2)/3*4>MaxBase64Bytes { return nil,errors.New("MiMo reference audio exceeds 10 MiB base64 limit") }
+			if (len(data)+2)/3*4>MaxBase64Bytes { return nil,errors.New("MiMo reference audio exceeds 10 MB base64 limit") }
+			data,err:=os.ReadFile(o.ReferenceAudioPath)
+			if err!=nil { return nil,fmt.Errorf("read MiMo reference audio: %w",err) }
+			if (len(data)+2)/3*4>MaxBase64Bytes { return nil,errors.New("MiMo reference audio exceeds 10 MB base64 limit") }
 			audio["voice"]="data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data)
 		default: return nil,fmt.Errorf("unsupported MiMo TTS model %q",o.Model)
 		}
