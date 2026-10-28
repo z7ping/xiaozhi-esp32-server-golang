@@ -178,7 +178,6 @@ func (o SpeechOptions) requestBody(text string) (map[string]any,error) {
 			case ".mp3": mime="audio/mpeg"
 			default: return nil,errors.New("MiMo reference audio must be WAV or MP3")
 			}
-			if (len(data)+2)/3*4>MaxBase64Bytes { return nil,errors.New("MiMo reference audio exceeds 10 MB base64 limit") }
 			data,err:=os.ReadFile(o.ReferenceAudioPath)
 			if err!=nil { return nil,fmt.Errorf("read MiMo reference audio: %w",err) }
 			if (len(data)+2)/3*4>MaxBase64Bytes { return nil,errors.New("MiMo reference audio exceeds 10 MB base64 limit") }
