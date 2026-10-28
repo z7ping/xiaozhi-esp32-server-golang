@@ -365,15 +365,7 @@ const editConfig = (config) => {
     } else if (config.provider === 'mimo') {
       form.mimo = { ...form.mimo, ...(configObj.mimo || configObj) }
     } else if (configObj.xunfei) {
-      form.mimo = {
-    api_key: '',
-    api_url: 'https://api.xiaomimimo.com/v1/chat/completions',
-    model: 'mimo-v2.5-asr',
-    sample_rate: 16000,
-    language: 'auto',
-    timeout: 60
-  }
-  form.xunfei = { ...form.xunfei, ...configObj.xunfei }
+      form.xunfei = { ...form.xunfei, ...configObj.xunfei }
     } else if (config.provider === 'xunfei' && (configObj.appid || configObj.api_key || configObj.api_secret)) {
       form.xunfei = { ...form.xunfei, ...configObj }
     }
