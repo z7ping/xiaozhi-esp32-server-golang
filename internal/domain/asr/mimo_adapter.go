@@ -61,7 +61,7 @@ func (a *MiMoASRAdapter) StreamingRecognize(ctx context.Context,audio <-chan []f
 					}
 					return
 				}
-				if len(samples)+len(frame)>3_900_000 {
+				if len(samples)+len(frame)>mimo.MaxASRSamples {
 					select {
 					case result<-types.StreamingResult{IsFinal:true,Error:errors.New("MiMo ASR audio exceeds limit"),AsrType:"mimo",Mode:"offline"}:
 					case <-ctx.Done():
