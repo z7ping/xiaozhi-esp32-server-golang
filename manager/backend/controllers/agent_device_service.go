@@ -983,7 +983,7 @@ func parseUintParam(c *gin.Context, name string) (uint, bool) {
 func edgeVoiceOptions(voices []edgetypes.Voice) []VoiceOption {
 	result := make([]VoiceOption, 0, len(voices))
 	for _, voice := range voices {
-		if !strings.HasPrefix(voice.Locale, "zh-CN") || voice.ShortName == "" {
+		if !strings.HasPrefix(voice.ShortName, "zh-CN") {
 			continue
 		}
 		result = append(result, VoiceOption{Value: voice.ShortName, Label: voice.ShortName})
