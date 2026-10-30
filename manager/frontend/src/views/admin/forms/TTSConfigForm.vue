@@ -58,18 +58,21 @@
 
     <template v-if="model.provider === 'edge'">
       <el-form-item label="音色" prop="edge.voice">
-        <el-select
-          v-model="model.edge.voice"
-          placeholder="请选择音色"
-          style="width: 100%"
-          filterable
-          :loading="voiceLoading"
-          :disabled="voiceLoading"
-          allow-create
-          default-first-option
-        >
-          <el-option v-for="option in voiceOptionsList" :key="option.value" :label="option.label" :value="option.value" />
-        </el-select>
+        <div style="display: flex; gap: 8px; width: 100%">
+          <el-select
+            v-model="model.edge.voice"
+            placeholder="请选择音色"
+            style="flex: 1"
+            filterable
+            :loading="voiceLoading"
+            :disabled="voiceLoading"
+            allow-create
+            default-first-option
+          >
+            <el-option v-for="option in voiceOptionsList" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+          <el-button :loading="voiceLoading" @click="emit('request-voice-options', 'edge', { sync: true })">同步音色</el-button>
+        </div>
       </el-form-item>
       <el-form-item label="语速" prop="edge.rate">
         <el-input v-model="model.edge.rate" placeholder="请输入语速（如：+0%）" />

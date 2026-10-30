@@ -893,6 +893,7 @@ const loadVoiceOptions = async (provider, options = {}) => {
   voiceLoading.value = true
   try {
     const params = { provider, config_id: form.config_id || undefined }
+    if (provider === 'edge' && options?.sync) params.sync_edge = '1'
     if (provider === 'aliyun_qwen') {
       const model = String(form.qwen_tts?.model || '').trim()
       if (model) {
@@ -916,21 +917,26 @@ const loadVoiceOptions = async (provider, options = {}) => {
     if (requestId !== voiceRequestId || !showDialog.value) return
     const nextOptions = response.data.data || []
     voiceOptions.value = nextOptions
+    if (provider === 'edge' && options?.sync) ElMessage.success(`已同步 ${nextOptions.length} 个音色`)
     if (provider === 'aliyun_qwen') {
       form.qwen_tts.voice = reconcileAliyunVoice(previousOptions, nextOptions, form.qwen_tts.voice)
     }
   } catch (error) {
     if (requestId !== voiceRequestId || !showDialog.value) return
     console.error('加载音色列表失败:', error)
-    voiceOptions.value = []
+    if (provider === 'edge' && options?.sync) {
+      ElMessage.warning('同步失败，保留当前音色列表')
+    } else {
+      voiceOptions.value = []
+    }
   } finally {
     if (requestId === voiceRequestId) voiceLoading.value = false
   }
 }
 
-const handleVoiceOptionsRequest = (provider) => {
+const handleVoiceOptionsRequest = (provider, options = {}) => {
   if (!showDialog.value) return
-  loadVoiceOptions(provider || form.provider, { trigger: 'dropdown' })
+  loadVoiceOptions(provider || form.provider, { trigger: 'dropdown', ...options })
 }
 
 // 监听 provider 变化，自动加载对应的音色列表

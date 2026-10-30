@@ -1,14 +1,18 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"xiaozhi/manager/backend/models"
 
+	edgetypes "github.com/difyz9/edge-tts-go/pkg/types"
+	edgevoices "github.com/difyz9/edge-tts-go/pkg/voices"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -976,6 +980,17 @@ func parseUintParam(c *gin.Context, name string) (uint, bool) {
 	return uint(id), true
 }
 
+func edgeVoiceOptions(voices []edgetypes.Voice) []VoiceOption {
+	result := make([]VoiceOption, 0, len(voices))
+	for _, voice := range voices {
+		if !strings.HasPrefix(voice.Locale, "zh-CN") || voice.ShortName == "" {
+			continue
+		}
+		result = append(result, VoiceOption{Value: voice.ShortName, Label: voice.ShortName})
+	}
+	return result
+}
+
 func getVoiceOptionsForUser(db *gorm.DB, c *gin.Context, targetUserID uint, provider, configID, overrideURL, overrideAPIKey, overrideModel string) ([]VoiceOption, error) {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
@@ -1011,6 +1026,18 @@ func getVoiceOptionsForUser(db *gorm.DB, c *gin.Context, targetUserID uint, prov
 			}
 			systemVoices = GetAliyunQwenVoicesByModel(qc.Model)
 		}
+	} else if provider == "edge" && c.Query("sync_edge") == "1" {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
+		defer cancel()
+		voices, err := edgevoices.ListVoices(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("同步EdgeTTS音色失败: %w", err)
+		}
+		liveOptions := edgeVoiceOptions(voices)
+		if len(liveOptions) == 0 {
+			return nil, fmt.Errorf("同步EdgeTTS音色失败: 音色目录未返回中文音色")
+		}
+		systemVoices = append(GetVoiceOptionsByProvider(provider), liveOptions...)
 	} else {
 		systemVoices = GetVoiceOptionsByProvider(provider)
 	}
