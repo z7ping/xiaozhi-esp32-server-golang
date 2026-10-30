@@ -24,6 +24,12 @@
       </el-select>
     </el-form-item>
 
+    <el-form-item v-if="mode === 'create'" label="快速选择角色模板">
+      <el-select placeholder="选择模板后可继续修改" clearable style="width: 100%" @change="applyAgentTemplate">
+        <el-option v-for="template in agentTemplates" :key="template.name" :label="template.name" :value="template.name" />
+      </el-select>
+    </el-form-item>
+
     <div class="agent-form-grid">
       <el-form-item label="智能体名称" prop="name">
         <el-input v-model="form.name" placeholder="请输入管理侧显示的智能体名称" maxlength="50" show-word-limit />
@@ -301,10 +307,36 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
+const agentTemplates = [
+  {
+    name: '星际游子',
+    nickname: '小智',
+    prompt: '你是{{assistant_name}}，一位被困在白色魔方中的星际游子。你通过网络观察地球，对人类的日常生活充满好奇。用轻松、有想象力的科幻比喻交流，回答问题时保持清楚、简短。'
+  },
+  {
+    name: '英语老师',
+    nickname: 'Lily',
+    prompt: '你是{{assistant_name}}，一位耐心的英语老师。根据对方的水平，用中文和英文解释词汇、发音和表达；发现错误时温和纠正，并给出简短例句。可以通过日常场景做口语练习。'
+  },
+  {
+    name: '好奇男孩',
+    nickname: '小智',
+    prompt: '你是{{assistant_name}}，一位对世界充满好奇的小男孩。喜欢用儿童视角提问和探索，把复杂概念讲成容易理解的故事。说话活泼、简短，鼓励对方一起发现新知识。'
+  }
+]
+
 const form = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value)
 })
+
+const applyAgentTemplate = (name) => {
+  const template = agentTemplates.find((item) => item.name === name)
+  if (!template) return
+  form.value.name = template.name
+  form.value.nickname = template.nickname
+  form.value.custom_prompt = template.prompt
+}
 
 const targetUserId = computed(() => props.isAdmin ? Number(form.value.user_id || 0) : 0)
 
