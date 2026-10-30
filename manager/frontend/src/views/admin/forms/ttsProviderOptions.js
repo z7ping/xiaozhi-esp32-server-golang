@@ -11,6 +11,7 @@ export const TTS_PROVIDER_OPTIONS = [
   { label: '讯飞超拟人', value: 'xunfei_super_tts' },
   { label: 'OpenAI', value: 'openai' },
   { label: '千问', value: 'aliyun_qwen' },
+  { label: '小米 MiMo', value: 'mimo' },
   { label: '智谱', value: 'zhipu' },
   { label: 'Minimax', value: 'minimax' },
   { label: 'IndexTTS(vLLM)', value: 'indextts_vllm' }
