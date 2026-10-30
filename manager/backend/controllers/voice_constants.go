@@ -33,6 +33,8 @@ var VoiceOptions = map[string][]VoiceOption{
 		{Value: "zh-CN-YunfengNeural", Label: "云枫（男声）"},
 		{Value: "zh-CN-YunyeNeural", Label: "云野（男声）"},
 		{Value: "zh-CN-YunzeNeural", Label: "云泽（男声）"},
+		{Value: "zh-CN-liaoning-XiaobeiNeural", Label: "辽宁晓北（女声）"},
+		{Value: "zh-CN-shaanxi-XiaoniNeural", Label: "陕西小妮（女声）"},
 	},
 
 	// Microsoft TTS 音色列表（中文）
