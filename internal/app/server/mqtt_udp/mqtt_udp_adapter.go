@@ -244,10 +244,25 @@ func (s *MqttUdpAdapter) checkClientActive() error {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
+		heartbeat := time.NewTicker(time.Minute)
+		defer heartbeat.Stop()
 		for {
 			select {
 			case <-s.stopCtx.Done():
 				return
+			case <-heartbeat.C:
+				if s.onDeviceOnline != nil {
+					s.lifecycleStates.Range(func(key, value interface{}) bool {
+						state := value.(*mqttDeviceLifecycleState)
+						state.mu.Lock()
+						online := state.brokerOnline
+						state.mu.Unlock()
+						if online {
+							s.onDeviceOnline(key.(string))
+						}
+						return true
+					})
+				}
 			case <-ticker.C:
 				s.deviceId2Conn.Range(func(key, value interface{}) bool {
 					conn := value.(*MqttUdpConn)
@@ -616,7 +631,7 @@ func (s *MqttUdpAdapter) processMessage() {
 				Errorf("确保 MQTT transport 在线失败: device=%s err=%v", deviceId, err)
 				continue
 			}
-			if notifyOnline && s.onDeviceOnline != nil {
+			if (notifyOnline || clientMsg.Type == "hello") && s.onDeviceOnline != nil {
 				s.onDeviceOnline(deviceId)
 			}
 			if notifyOnline && s.onTransportReady != nil {
