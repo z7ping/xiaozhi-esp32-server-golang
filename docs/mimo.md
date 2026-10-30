@@ -1,36 +1,29 @@
-# Xiaomi MiMo ASR / TTS
+# 小米 MiMo ASR 与 TTS
 
-This integration uses the existing ASR/TTS providers; no ESP32 firmware changes are required.
+本分支在现有 ASR、TTS 提供商框架中接入小米 MiMo。无需修改 ESP32 固件或迁移数据库。
 
-## Configuration
+## 配置
 
-Select **小米 MiMo** in the manager's ASR and TTS settings. Set the API key, or set `MIMO_API_KEY` in the server environment. Both use `https://api.xiaomimimo.com/v1/chat/completions` by default.
+在管理后台的 **ASR 配置**和 **TTS 配置**中分别选择「小米 MiMo」。两者都需要 API Key：可填入表单，也可在**运行 Go 主服务的环境**中设置 `MIMO_API_KEY`。默认 API 地址为 `https://api.xiaomimimo.com/v1/chat/completions`。不要把 Key 提交到仓库或贴到 PR 中。
 
-- ASR provider: `mimo`, model: `mimo-v2.5-asr`, `sample_rate: 16000`, `language: auto|zh|en`. The adapter buffers each VAD-delimited utterance and uploads WAV; this is **not** realtime audio-input ASR.
-- TTS provider: `mimo`, model: `mimo-v2.5-tts`, voice: `mimo_default` (or `冰糖`, `茉莉`, `苏打`, `白桦`, `Mia`, `Chloe`, `Milo`, `Dean`). The server decodes streamed 24 kHz PCM16 and reuses its existing Opus encoder.
-- VoiceDesign: select `mimo-v2.5-tts-voicedesign`, enter a `voice_prompt` describing the target voice.
-- VoiceClone: select `mimo-v2.5-tts-voiceclone` and set `reference_audio_path` to an **existing server-side WAV/MP3 file**. It is sent with each synthesis request; it is not a permanent remote voice ID.
+| 功能 | 模型和用法 |
+| --- | --- |
+| 语音识别 | `mimo-v2.5-asr`；支持 `auto`、`zh`、`en`。服务端收齐一段由 VAD 划分的语音后，以 16 kHz WAV 上传；不支持边说边上传的实时输入。 |
+| 普通语音合成 | `mimo-v2.5-tts`；默认音色 `mimo_default`。后台还提供冰糖、茉莉、苏打、白桦、Mia、Chloe、Milo、Dean 等候选音色。服务端接收 24 kHz PCM16 音频流，再通过现有链路编码供设备播放。 |
+| 声音设计 | `mimo-v2.5-tts-voicedesign`；填写 `voice_prompt` 描述目标声音。 |
+| 声音复刻 | `mimo-v2.5-tts-voiceclone`；填写 `reference_audio_path`，指向**运行 Go 主服务的机器或容器内**可读取的 WAV/MP3 文件。每次合成都会发送该文件；此路径不是远端音色 ID，也没有接入现有声音素材上传界面。 |
 
-VoiceDesign and VoiceClone currently use streaming-compatible responses but may only output audio once inference completes. This integration does not change the manager's existing voice-clone upload/asset workflow.
+声音设计和声音复刻虽然走流式响应，实际可能要等推理完成才开始返回音频。
 
-No Xiaomi-specific dependencies, dynamic plugin framework, or database migration are introduced.
+## 检查与验收
 
-Official API: https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/multimodal-understanding/speech-synthesis-v2.5
-
-## Local smoke test
-
-Use the feature branch; the fork's `main` does not contain MiMo yet.
+先按项目的[编译与部署指南](../doc/compile_deploy.md)安装 Go 和主服务所需的原生音频依赖。单独运行 `go test` 或 `go build` 只能检查代码，不能证明 MiMo API 或 ESP32 播放正常。
 
 ```bash
-git clone -b feature/xiaomi-mimo https://github.com/z7ping/xiaozhi-esp32-server-golang.git
-cd xiaozhi-esp32-server-golang
-git submodule update --init --recursive
-go test ./pkg/mimo
-go build -o xiaozhi_server ./cmd/server/
-# Set MIMO_API_KEY in the environment before starting the server:
-./xiaozhi_server -c config/config.yaml
+go test ./pkg/mimo ./internal/domain/asr ./internal/domain/tts/mimo
+go build -o xiaozhi_server ./cmd/server
 ```
 
-The project requires Go 1.24+ as declared in go.mod, plus its native audio dependencies. On Windows use the corresponding `xiaozhi_server.exe` binary and set the environment variable with your shell.
+真实验收需要在运行中的主服务配置有效 Key，并依次检查：短句识别结果、普通 TTS 在 ESP32 上播放、播放中断，以及无效 Key 时的错误反馈。声音设计和声音复刻可在普通 TTS 通过后单独测试。服务端产生音频不等于设备扬声器已播放，最后一步需要在设备上确认。
 
-Acceptance checklist: ASR recognizes a short Chinese sentence, standard TTS plays on ESP32, interruption works, and invalid API keys produce an error/empty-audio indication. VoiceDesign/VoiceClone are optional follow-on tests and can be slower. Do not paste an API key into issue/PR comments or logs.
+API 参考：[小米 MiMo 语音合成文档](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/multimodal-understanding/speech-synthesis-v2.5)。
