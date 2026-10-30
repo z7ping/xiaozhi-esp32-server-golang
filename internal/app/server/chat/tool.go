@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -255,7 +256,8 @@ func (e *toolCallExecutor) executeToolCall(order int, toolCall schema.ToolCall) 
 		return toolCallExecutionResult{order: order, message: resultMessage}
 	}
 	costTs := time.Now().UnixMilli() - startTs
-	if len(fcResult) > 2048 {
+	// A resource_link URI may contain an opaque playback token.
+	if len(fcResult) > 2048 || strings.Contains(fcResult, "resource_link") {
 		log.Infof("工具调用结果 len: %d, 耗时: %dms", len(fcResult), costTs)
 	} else {
 		log.Infof("工具调用结果 %s, 耗时: %dms", fcResult, costTs)
@@ -288,6 +290,7 @@ func (e *toolCallExecutor) executeToolCall(order int, toolCall schema.ToolCall) 
 
 	if len(contentList) > 0 {
 		var mcpContent string
+		var resourceLinks []mcp_go.ResourceLink
 		for _, content := range contentList {
 			if audioContent, ok := content.(mcp_go.AudioContent); ok {
 				log.Debugf("调用工具 %s 返回音频资源长度: %d", toolName, len(audioContent.Data))
@@ -301,19 +304,22 @@ func (e *toolCallExecutor) executeToolCall(order int, toolCall schema.ToolCall) 
 				break
 			}
 			if resourceLink, ok := content.(mcp_go.ResourceLink); ok {
-				log.Debugf("调用工具 %s 返回资源链接: %+v", toolName, resourceLink)
-				mcpContent = "执行成功"
-				if err := e.manager.handleResourceLink(e.ctx, resourceLink, toolObj, &e.mediaWg); err != nil {
-					log.Errorf("mcp播放资源链接失败: %v", err)
-					mcpContent = "执行失败"
-				}
-				execResult.shouldStopLLMProcessing = true
-				execResult.hasMediaOutput = true
-				break
+				resourceLinks = append(resourceLinks, resourceLink)
+				continue
 			}
 			if textContent, ok := content.(mcp_go.TextContent); ok {
 				log.Debugf("调用工具 %s 返回文本资源长度: %s", toolName, textContent.Text)
 				mcpContent += textContent.Text
+			}
+		}
+		if len(resourceLinks) > 0 {
+			if err := e.manager.handleResourceLinks(e.ctx, resourceLinks, toolObj, &e.mediaWg); err != nil {
+				log.Errorf("MCP 音频资源播放失败: %v", err)
+				mcpContent = fmt.Sprintf("播放失败: %v", err)
+			} else {
+				mcpContent = fmt.Sprintf("已开始播放 %d 条音频资源", len(resourceLinks))
+				execResult.shouldStopLLMProcessing = true
+				execResult.hasMediaOutput = true
 			}
 		}
 		if mcpContent != "" {
@@ -325,31 +331,35 @@ func (e *toolCallExecutor) executeToolCall(order int, toolCall schema.ToolCall) 
 	return execResult
 }
 
+// handleResourceLinks plays all MCP links as a single ordered queue.
 func (l *LLMManager) handleResourceLink(ctx context.Context, resourceLink mcp_go.ResourceLink, toolCall tool.InvokableTool, wg *sync.WaitGroup) error {
-	wg.Add(1)
+	return l.handleResourceLinks(ctx, []mcp_go.ResourceLink{resourceLink}, toolCall, wg)
+}
 
-	source, err := buildMediaSourceFromResourceLink(resourceLink, toolCall)
-	if err != nil {
-		wg.Done()
-		return err
+func (l *LLMManager) handleResourceLinks(ctx context.Context, links []mcp_go.ResourceLink, toolCall tool.InvokableTool, wg *sync.WaitGroup) error {
+	if len(links) == 0 {
+		return fmt.Errorf("MCP 音频资源列表为空")
 	}
-
 	if l.session == nil || l.session.mediaPlayer == nil {
-		wg.Done()
 		return fmt.Errorf("session media player 未初始化")
 	}
-
-	handle, err := l.session.mediaPlayer.PlaySourceWithHandle(ctx, source)
+	sources := make([]MediaSourceDescriptor, 0, len(links))
+	for _, link := range links {
+		source, err := buildMediaSourceFromResourceLink(link, toolCall)
+		if err != nil {
+			return err
+		}
+		sources = append(sources, source)
+	}
+	handle, err := l.session.mediaPlayer.ReplacePlaylistAndPlayWithHandle(ctx, sources, 0)
 	if err != nil {
-		wg.Done()
 		return err
 	}
-
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		_ = handle.Wait(ctx)
 	}()
-
 	return nil
 }
 
@@ -408,6 +418,24 @@ func buildMediaSourceFromAudioContent(title string, audioContent mcp_go.AudioCon
 }
 
 func buildMediaSourceFromResourceLink(resourceLink mcp_go.ResourceLink, toolCall tool.InvokableTool) (MediaSourceDescriptor, error) {
+	// HTTP(S) MCP links are directly playable; other schemes still use resource/read.
+	if parsed, err := url.Parse(strings.TrimSpace(resourceLink.URI)); err == nil &&
+		(parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && parsed.User == nil {
+		if !strings.HasPrefix(strings.ToLower(resourceLink.MIMEType), "audio/") {
+			return MediaSourceDescriptor{}, fmt.Errorf("HTTP MCP 资源不是音频类型: %s", resourceLink.MIMEType)
+		}
+		title := strings.TrimSpace(resourceLink.Name)
+		if title == "" {
+			title = "MCP 音频"
+		}
+		return MediaSourceDescriptor{
+			Title:      title,
+			MIMEType:   resourceLink.MIMEType,
+			SourceType: MediaSourceTypeHTTPURL,
+			Meta:       map[string]string{"source": string(MediaSourceTypeHTTPURL), "origin": "mcp_resource_link"},
+			HTTP:       &HTTPMediaSource{URL: parsed.String()},
+		}, nil
+	}
 	mcpTool, ok := toolCall.(*mcp.McpTool)
 	if !ok || mcpTool == nil {
 		return MediaSourceDescriptor{}, fmt.Errorf("resource link 播放仅支持 MCP 远程工具")

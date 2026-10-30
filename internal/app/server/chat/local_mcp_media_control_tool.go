@@ -14,7 +14,7 @@ const localMcpMusicControlToolName = "control_music_playback"
 func init() {
 	if err := RegisterLocalMcpFunc(
 		localMcpMusicControlToolName,
-		"当用户要控制当前设备正在播放的音乐或音频时必须使用。对于“继续播放”“恢复播放”“继续听”“接着放”“暂停”“停止”“上一首”“下一首”“播放歌单”“播放歌单里的歌曲”“播放播放列表”“把当前播放加入歌单”等指令，必须调用此工具，不能只做文字回复。仅当用户想播放新的歌曲、搜索歌曲或点播具体音乐时，不要使用此工具。",
+		"当用户要控制当前设备正在播放的音乐或音频时必须使用。对于“继续播放”“恢复播放”“继续听”“接着放”“暂停”“停止”“上一首”“下一首”“恢复当前队列”“把当前播放加入歌单”等针对已有播放内容的指令，必须调用此工具，不能只做文字回复。仅用于控制当前设备已经存在的播放队列；如果用户要搜索歌曲、点播新音乐或播放 Jellyfin 等外部音乐库中的歌单，应先调用对应音乐 MCP 的搜索及资源获取工具，不要使用此控制工具。",
 		MusicPlaybackControlParams{},
 		musicPlaybackControlHandler,
 	); err != nil {
