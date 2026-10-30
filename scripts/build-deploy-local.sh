@@ -37,5 +37,6 @@ if ! docker compose config --format json | python3 -c 'import json,sys; assert j
 	echo "Compose 的 main-server 镜像必须设为 $image" >&2
 	exit 1
 fi
+docker compose up -d --no-deps jellyfin-mcp
 docker compose up -d --force-recreate --no-deps main-server
 docker ps --filter name=^/xiaozhi-main-server$ --format '{{.Names}} {{.Status}} {{.Image}}'
