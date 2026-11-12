@@ -42,12 +42,12 @@ func TestDeviceMediaPlaylistPageIsBounded(t *testing.T) {
     for index := range items {
         items[index].Source.Title = "第九首测试音乐"
     }
-    page := deviceMediaPage(items, 8)
-    if len(page) != 8 || page[0].Index != 8 || page[7].Index != 15 {
+    page := deviceMediaPage(items, 6)
+    if len(page) != 6 || page[0].Index != 6 || page[5].Index != 11 {
         t.Fatalf("unexpected page: %+v", page)
     }
-    last := deviceMediaPage(items, 16)
-    if len(last) != 3 || last[2].Index != 18 {
+    last := deviceMediaPage(items, 18)
+    if len(last) != 1 || last[0].Index != 18 {
         t.Fatalf("unexpected last page: %+v", last)
     }
     if out := deviceMediaPage(items, 19); len(out) != 0 {
