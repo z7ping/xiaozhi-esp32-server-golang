@@ -450,7 +450,7 @@ func (c *ChatManager) handleTextMessage(message []byte) error {
 	case MessageTypeMcp:
 		return c.HandleMcpMessage(&clientMsg)
 	case MessageTypeMedia:
-		return c.HandleDeviceMediaMessage(clientMsg.State)
+		return c.HandleDeviceMediaMessage(clientMsg.State, clientMsg.MediaIndex)
 	case MessageTypeGoodBye:
 		return c.HandleGoodByeMessage(&clientMsg)
 	default:
