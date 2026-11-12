@@ -105,6 +105,7 @@ type MediaPlayerState struct {
 	CurrentTitle      string
 	CurrentSourceType MediaSourceType
 	PositionMs        int64
+    DurationMs        int64
 	UpdatedAt         int64
 	ErrMsg            string
 }
@@ -835,6 +836,7 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandleAt(ctx conte
 	r.state.CurrentTitle = items[startIndex].Source.Title
 	r.state.CurrentSourceType = items[startIndex].Source.SourceType
 	r.state.PositionMs = 0
+	r.state.DurationMs = 0
 	r.state.ErrMsg = ""
 	r.state.UpdatedAt = time.Now().UnixMilli()
 	r.mu.Unlock()
@@ -889,6 +891,7 @@ func (r *deviceMediaRuntime) PlayAgentPlaylistIndexAt(ctx context.Context, agent
 	r.state.CurrentTitle = snapshot[startIndex].Source.Title
 	r.state.CurrentSourceType = snapshot[startIndex].Source.SourceType
 	r.state.PositionMs = 0
+	r.state.DurationMs = 0
 	r.state.ErrMsg = ""
 	r.state.UpdatedAt = time.Now().UnixMilli()
 	r.mu.Unlock()
@@ -1081,6 +1084,7 @@ func (r *deviceMediaRuntime) Stop(ctx context.Context) error {
 	r.resumeOnAttach = false
 	r.state.Status = play_music.StatusStopped
 	r.state.PositionMs = 0
+	r.state.DurationMs = 0
 	r.state.ErrMsg = ""
 	r.state.UpdatedAt = time.Now().UnixMilli()
 	r.mu.Unlock()
@@ -1371,6 +1375,7 @@ func (r *deviceMediaRuntime) prepareTrack(active *activeMediaPlayback, index int
 	r.state.CurrentTitle = item.Source.Title
 	r.state.CurrentSourceType = item.Source.SourceType
 	r.state.PositionMs = 0
+	r.state.DurationMs = 0
 	r.state.ErrMsg = ""
 	if active.isPaused() {
 		r.state.Status = play_music.StatusPaused
@@ -1402,6 +1407,7 @@ func (r *deviceMediaRuntime) advanceAfterTrack(active *activeMediaPlayback, inde
 		r.resumeOnAttach = false
 		r.state.Status = play_music.StatusStopped
 		r.state.PositionMs = 0
+		r.state.DurationMs = 0
 		r.state.UpdatedAt = time.Now().UnixMilli()
 		r.refreshPublicStateLocked()
 		return -1, false
@@ -1413,6 +1419,7 @@ func (r *deviceMediaRuntime) advanceAfterTrack(active *activeMediaPlayback, inde
 	r.state.CurrentTitle = queue[nextIndex].Source.Title
 	r.state.CurrentSourceType = queue[nextIndex].Source.SourceType
 	r.state.PositionMs = 0
+	r.state.DurationMs = 0
 	r.state.Status = play_music.StatusPlaying
 	r.state.UpdatedAt = time.Now().UnixMilli()
 	r.refreshPublicStateLocked()
@@ -1973,6 +1980,15 @@ func (r *deviceMediaRuntime) wrapMediaAudioStream(ctx context.Context, input <-c
 	}()
 
 	return output
+}
+
+func (r *deviceMediaRuntime) setDecodedDuration(active *activeMediaPlayback, durationMs int64) {
+    if durationMs <= 0 || durationMs > 24*60*60*1000 { return }
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    if r.active != active { return }
+    r.state.DurationMs = durationMs
+    r.state.UpdatedAt = time.Now().UnixMilli()
 }
 
 func (r *deviceMediaRuntime) setSeekPosition(active *activeMediaPlayback, positionMs int64) {
