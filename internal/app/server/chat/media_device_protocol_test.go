@@ -6,6 +6,8 @@ import (
     "testing"
     "strings"
     "unicode/utf8"
+
+    "xiaozhi-esp32-server-golang/internal/domain/play_music"
 )
 
 func TestValidDeviceMediaAction(t *testing.T) {
@@ -118,4 +120,55 @@ func TestDeviceMediaSnapshotDoesNotCopyInlineAudioBytes(t *testing.T) {
     if len(state.Playlist) != 0 {
         t.Fatal("device snapshot must not carry full media descriptors")
     }
+}
+
+func TestSeekRejectsKnownOutOfBoundsWithoutChangingPlayback(t *testing.T) {
+    coordinator := newMediaPlaybackCoordinator()
+    runtime := coordinator.getOrCreateRuntime("seek-bounds-test")
+    current := newActiveMediaPlayback(context.Background())
+    defer current.cancel()
+    runtime.mu.Lock()
+    runtime.active = current
+    runtime.mode = mediaPlaybackModeStandalone
+    runtime.playbackIndex = 0
+    runtime.state.DurationMs = 1000
+    runtime.state.Status = play_music.StatusPlaying
+    runtime.standaloneItems = []MediaPlaylistItem{{Source: MediaSourceDescriptor{Title: "short"}}}
+    runtime.mu.Unlock()
+
+    err := runtime.Seek(context.Background(), 1500, mediaPlaybackAudioConfig{})
+    if err == nil { t.Fatal("seek past known duration must fail") }
+    runtime.mu.RLock()
+    unchanged := runtime.active == current && runtime.state.DurationMs == 1000
+    runtime.mu.RUnlock()
+    if !unchanged { t.Fatal("invalid seek must not restart playback") }
+}
+
+func TestSeekPreservesPausedStatus(t *testing.T) {
+    coordinator := newMediaPlaybackCoordinator()
+    runtime := coordinator.getOrCreateRuntime("seek-paused-test")
+    old := newActiveMediaPlayback(context.Background())
+    old.closeDone()
+    defer old.cancel()
+    runtime.mu.Lock()
+    runtime.active = old
+    runtime.mode = mediaPlaybackModeStandalone
+    runtime.playbackIndex = 0
+    runtime.state.DurationMs = 120000
+    runtime.state.Status = play_music.StatusPaused
+    runtime.standaloneItems = []MediaPlaylistItem{{Source: MediaSourceDescriptor{
+        Title: "paused-song", SourceType: MediaSourceTypeHTTPURL,
+        HTTP: &HTTPMediaSource{URL: "https://example.com/audio.mp3"},
+    }}}
+    runtime.mu.Unlock()
+
+    if err := runtime.Seek(context.Background(), 5000, mediaPlaybackAudioConfig{}); err != nil {
+        t.Fatalf("paused seek failed: %v", err)
+    }
+    state := runtime.GetState()
+    if state.Status != play_music.StatusPaused || state.PositionMs != 5000 ||
+       state.DurationMs != 120000 {
+        t.Fatalf("paused seek must keep status, position and duration: %+v", state)
+    }
+    stopRuntimeAndWait(t, runtime)
 }
