@@ -63,41 +63,51 @@ func deviceMediaPage(items []deviceMediaQueueSummary, offset int) []deviceMediaP
 
 // The client is authenticated by the existing device session; it cannot pick a
 // different playback runtime, audio URL or server-side file path.
-func (c *ChatManager) HandleDeviceMediaMessage(action string, index int, positionMs int64) error {
+func (c *ChatManager) HandleDeviceMediaMessage(action string, index *int, positionMs *int64) error {
+    if c == nil || c.serverTransport == nil || c.managerClosing.Load() {
+        return fmt.Errorf("device transport not ready")
+    }
     action = strings.ToLower(strings.TrimSpace(action))
     if !validDeviceMediaAction(action) {
         return fmt.Errorf("unsupported device media action: %q", action)
     }
-    if c == nil || c.serverTransport == nil || c.managerClosing.Load() {
-        return fmt.Errorf("device transport not ready")
+    if (action == "select" || action == "get_playlist") && (index == nil || *index < 0) {
+        return fmt.Errorf("missing or invalid playlist index for %s", action)
+    }
+    if action == "seek" && (positionMs == nil || *positionMs < 0 || *positionMs > 2*60*60*1000) {
+        return fmt.Errorf("missing or invalid seek position")
     }
     session := c.GetSession()
     if session == nil || session.mediaPlayer == nil {
         return c.sendDeviceMediaState(nil, "player not ready", -1)
     }
-
     if action == "get_state" {
         return c.sendDeviceMediaState(session, "", -1)
     }
     if action == "get_playlist" {
-        if index < 0 {
-            return fmt.Errorf("invalid playlist page offset: %d", index)
-        }
-        return c.sendDeviceMediaState(session, "", index)
+        return c.sendDeviceMediaState(session, "", *index)
     }
 
-    // Pause/skip/stop may wait for audio queue draining. Do not block
-    // the incoming device command loop; the runtime handles concurrency.
+    // Take copies before the command is scheduled; never use decoded message
+    // pointers in the goroutine after the original JSON is released.
+    selectedIndex := -1
+    if index != nil { selectedIndex = *index }
+    targetMs := int64(-1)
+    if positionMs != nil { targetMs = *positionMs }
+
     go func() {
+        c.mediaControlMu.Lock()
+        defer c.mediaControlMu.Unlock()
+        if c.managerClosing.Load() { return }
         ctx := c.ctx
         if ctx == nil {
             ctx = context.Background()
         }
         var err error
         if action == "select" {
-            err = session.mediaPlayer.PlayQueueIndex(ctx, index)
+            err = session.mediaPlayer.PlayQueueIndex(ctx, selectedIndex)
         } else if action == "seek" {
-            err = session.mediaPlayer.Seek(ctx, positionMs)
+            err = session.mediaPlayer.Seek(ctx, targetMs)
         } else {
             _, err = controlMusicPlayback(ctx, session, &MusicPlaybackControlParams{Action: action})
         }
@@ -108,7 +118,7 @@ func (c *ChatManager) HandleDeviceMediaMessage(action string, index int, positio
         }
         pageOffset := -1
         if action == "select" && err == nil {
-            pageOffset = (index / deviceMediaPageSize) * deviceMediaPageSize
+            pageOffset = (selectedIndex / deviceMediaPageSize) * deviceMediaPageSize
         }
         if err := c.sendDeviceMediaState(session, errMessage, pageOffset); err != nil {
             log.Debugf("设备 %s 回传媒体状态失败: %v", c.DeviceID, err)
