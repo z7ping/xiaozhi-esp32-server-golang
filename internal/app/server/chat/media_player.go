@@ -706,17 +706,24 @@ func (r *deviceMediaRuntime) Seek(ctx context.Context, positionMs int64, cfg med
     agentID := r.playlistAgentID
     index := r.playbackIndex
     items := r.currentPlaybackQueueLocked()
+    durationMs := r.state.DurationMs
+    paused := r.active != nil && r.state.Status == play_music.StatusPaused
+    hasActive := r.active != nil
     r.mu.RUnlock()
+    if !hasActive { return fmt.Errorf("no active track to seek") }
+    if durationMs > 0 && positionMs >= durationMs {
+        return fmt.Errorf("seek target beyond known duration")
+    }
     if index < 0 || index >= len(items) {
         return fmt.Errorf("no current track to seek")
     }
     switch mode {
     case mediaPlaybackModeAgentPlaylist:
-        return r.PlayAgentPlaylistIndexAt(ctx, agentID, index, cfg, positionMs)
+        return r.PlayAgentPlaylistIndexAt(ctx, agentID, index, cfg, positionMs, paused, durationMs)
     case mediaPlaybackModeStandalone:
         sources := make([]MediaSourceDescriptor, len(items))
         for i, item := range items { sources[i] = item.Source }
-        _, err := r.ReplaceStandaloneQueueAndPlayWithHandleAt(ctx, sources, index, cfg, positionMs)
+        _, err := r.ReplaceStandaloneQueueAndPlayWithHandleAt(ctx, sources, index, cfg, positionMs, paused, durationMs)
         return err
     default:
         return fmt.Errorf("no seekable playback queue")
@@ -833,10 +840,10 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlay(ctx context.Context, 
 }
 
 func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandle(ctx context.Context, sources []MediaSourceDescriptor, startIndex int, cfg mediaPlaybackAudioConfig) (*MediaPlaybackHandle, error) {
-    return r.ReplaceStandaloneQueueAndPlayWithHandleAt(ctx, sources, startIndex, cfg, 0)
+    return r.ReplaceStandaloneQueueAndPlayWithHandleAt(ctx, sources, startIndex, cfg, 0, false, 0)
 }
 
-func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandleAt(ctx context.Context, sources []MediaSourceDescriptor, startIndex int, cfg mediaPlaybackAudioConfig, seekMs int64) (*MediaPlaybackHandle, error) {
+func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandleAt(ctx context.Context, sources []MediaSourceDescriptor, startIndex int, cfg mediaPlaybackAudioConfig, seekMs int64, preservePaused bool, knownDurationMs int64) (*MediaPlaybackHandle, error) {
 	if r == nil {
 		return nil, fmt.Errorf("媒体播放器未初始化")
 	}
@@ -850,6 +857,7 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandleAt(ctx conte
 	items := buildMediaPlaylistItems(sources)
 	active := newActiveMediaPlayback(r.coordinator.ctx)
     active.seekUntilMs = seekMs
+    if preservePaused { active.setPaused(true) }
 
 	r.mu.Lock()
 	oldActive, oldExclusive := r.replaceActivePlaybackLocked(active)
@@ -860,15 +868,17 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandleAt(ctx conte
 	r.audioConfig = normalizeMediaPlaybackAudioConfig(cfg, r.audioConfig)
 	currentSource := cloneMediaSourceDescriptor(items[startIndex].Source)
 	r.currentSource = &currentSource
-	r.pauseReason = mediaPauseReasonNone
+    r.pauseReason = mediaPauseReasonNone
+    if preservePaused { r.pauseReason = mediaPauseReasonUser }
 	r.resumeOnAttach = false
-	r.state.Status = play_music.StatusPlaying
+    r.state.Status = play_music.StatusPlaying
+    if preservePaused { r.state.Status = play_music.StatusPaused }
 	r.state.Playlist = nil
 	r.state.CurrentIndex = -1
 	r.state.CurrentTitle = items[startIndex].Source.Title
 	r.state.CurrentSourceType = items[startIndex].Source.SourceType
-	r.state.PositionMs = 0
-	r.state.DurationMs = 0
+    r.state.PositionMs = seekMs
+    r.state.DurationMs = knownDurationMs
 	r.state.ErrMsg = ""
 	r.state.UpdatedAt = time.Now().UnixMilli()
 	r.mu.Unlock()
@@ -883,10 +893,10 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandleAt(ctx conte
 }
 
 func (r *deviceMediaRuntime) PlayAgentPlaylistIndex(ctx context.Context, agentID string, startIndex int, cfg mediaPlaybackAudioConfig) error {
-    return r.PlayAgentPlaylistIndexAt(ctx, agentID, startIndex, cfg, 0)
+    return r.PlayAgentPlaylistIndexAt(ctx, agentID, startIndex, cfg, 0, false, 0)
 }
 
-func (r *deviceMediaRuntime) PlayAgentPlaylistIndexAt(ctx context.Context, agentID string, startIndex int, cfg mediaPlaybackAudioConfig, seekMs int64) error {
+func (r *deviceMediaRuntime) PlayAgentPlaylistIndexAt(ctx context.Context, agentID string, startIndex int, cfg mediaPlaybackAudioConfig, seekMs int64, preservePaused bool, knownDurationMs int64) error {
 	if r == nil {
 		return fmt.Errorf("媒体播放器未初始化")
 	}
@@ -905,6 +915,7 @@ func (r *deviceMediaRuntime) PlayAgentPlaylistIndexAt(ctx context.Context, agent
 
 	active := newActiveMediaPlayback(r.coordinator.ctx)
     active.seekUntilMs = seekMs
+    if preservePaused { active.setPaused(true) }
 
 	r.mu.Lock()
 	oldActive, oldExclusive := r.replaceActivePlaybackLocked(active)
@@ -915,15 +926,17 @@ func (r *deviceMediaRuntime) PlayAgentPlaylistIndexAt(ctx context.Context, agent
 	r.audioConfig = normalizeMediaPlaybackAudioConfig(cfg, r.audioConfig)
 	currentSource := cloneMediaSourceDescriptor(snapshot[startIndex].Source)
 	r.currentSource = &currentSource
-	r.pauseReason = mediaPauseReasonNone
+    r.pauseReason = mediaPauseReasonNone
+    if preservePaused { r.pauseReason = mediaPauseReasonUser }
 	r.resumeOnAttach = false
-	r.state.Status = play_music.StatusPlaying
+    r.state.Status = play_music.StatusPlaying
+    if preservePaused { r.state.Status = play_music.StatusPaused }
 	r.state.Playlist = cloneMediaPlaylistItems(snapshot)
 	r.state.CurrentIndex = startIndex
 	r.state.CurrentTitle = snapshot[startIndex].Source.Title
 	r.state.CurrentSourceType = snapshot[startIndex].Source.SourceType
-	r.state.PositionMs = 0
-	r.state.DurationMs = 0
+    r.state.PositionMs = seekMs
+    r.state.DurationMs = knownDurationMs
 	r.state.ErrMsg = ""
 	r.state.UpdatedAt = time.Now().UnixMilli()
 	r.mu.Unlock()
@@ -1406,8 +1419,10 @@ func (r *deviceMediaRuntime) prepareTrack(active *activeMediaPlayback, index int
 	r.currentSource = &currentSource
 	r.state.CurrentTitle = item.Source.Title
 	r.state.CurrentSourceType = item.Source.SourceType
-	r.state.PositionMs = 0
-	r.state.DurationMs = 0
+    if active.seekUntilMs == 0 {
+        r.state.PositionMs = 0
+        r.state.DurationMs = 0
+    }
 	r.state.ErrMsg = ""
 	if active.isPaused() {
 		r.state.Status = play_music.StatusPaused
