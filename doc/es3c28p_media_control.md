@@ -6,6 +6,10 @@
 
 ```json
 {"type":"media","state":"get_state"}
+{"type":"media","state":"get_playlist","index":0}
+{"type":"media","state":"get_playlist","index":6}
+{"type":"media","state":"select","index":2}
+{"type":"media","state":"seek","position_ms":45000}
 {"type":"media","state":"pause"}
 {"type":"media","state":"resume"}
 {"type":"media","state":"stop"}
@@ -13,7 +17,7 @@
 {"type":"media","state":"next"}
 ```
 
-仅接受以上固定动作，复用与设备连接绑定的 ChatSession，不允许指定其他设备或播放来源。暂停、停止等可能等待音频队列清理的操作在独立 goroutine 执行，不阻塞收包循环。
+仅允许固定动作，绑定本设备的 ChatSession，不允许在消息中指定外部音频地址。触摸控制复用现有 SessionMediaPlayer、音频输出和控制通道；切歌、Seek、暂停等操作异步执行，不阻塞消息接收循环。
 
 ## 服务端 → 设备
 
@@ -21,21 +25,33 @@
 {
   "type": "media",
   "state": "playing",
-  "title": "当前歌曲名称",
+  "title": "真实歌曲标题",
   "position_ms": 12500,
-  "current_index": 0,
-  "playlist_length": 3
+  "duration_ms": 212000,
+  "current_index": 2,
+  "playlist_length": 14,
+  "page_offset": 0,
+  "playlist": [
+    {"index":0,"title":"第一首"},
+    {"index":1,"title":"第二首"}
+  ]
 }
 ```
 
-失败时在响应中增加 `error`；播放状态由既有 MediaPlayerState 获取，可能为 `idle / playing / paused / stopped / error`。未提供总时长，因此设备端暂时只显示已播放时间，不应假造 Seek 或总时长。
-
-设备打开播放器时立即请求 `get_state`，页面可见期间每 5 秒轮询一次；不创建新的音频流、设备媒体缓存或独立连接。服务端处理控制后立即返回最新状态。进入播放器之外的正常语音播放仍不受影响。
+- 普通状态回复不附加 `page_offset` / `playlist`。列表响应最多返回 6 首，支持分页，不向 ESP32 发送音频资源、Jellyfin 凭证或文件路径。
+- `duration_ms` 来自 MP3 解码器可确认的总样本数，或媒体源明确携带的 `duration_ms` 元数据。**无法确定时为 0，固件禁用 Seek 滑杆，不推算虚假时长**。
+- Seek 在 **Go 服务端**重启当前曲目、从头解码并丢弃目标位置前的帧，再继续给 ESP32 推送原有音频包。最多允许两小时位置；远程或长音频可能等待较久，超出结尾返回错误。该通用实现不是随机字节范围 HTTP Seek。
+- ESP32 只在播放器页面可见时每 5 秒查询一次播放状态；列表仅在用户打开或翻页时请求。
+- 当前缺真机资源、音频流与 WebSocket/MQTT 联调，不能声称已交付。
 
 ## 测试
 
 ```bash
-go test ./internal/app/server/chat -run 'Test(ValidDeviceMediaAction|DeviceMediaStateWireFormat)$' -count=1
+go test ./internal/app/server/chat -run 'Test(ValidDeviceMediaAction|DeviceMediaStateWireFormat|DeviceMediaPlaylistPageIsBounded|DeviceMediaPlaylistPageKeepsUTF8|SeekRequiresValidPositionAndQueue|DurationIsUpdatedOnlyForCurrentPlayback) -count=1
+```
+
+需要实机同时验证 WebSocket/MQTT、音频连续播放、暂停队列清空、恢复、上一首/下一首、断线后的错误显示。当前只提交源码和测试，没有宣称完成实际部署或 ESP32 联调。
+ -count=1
 ```
 
 需要实机同时验证 WebSocket/MQTT、音频连续播放、暂停队列清空、恢复、上一首/下一首、断线后的错误显示。当前只提交源码和测试，没有宣称完成实际部署或 ESP32 联调。
