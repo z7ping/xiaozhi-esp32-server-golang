@@ -2,18 +2,19 @@ package chat
 
 import (
     "encoding/json"
+    "context"
     "testing"
     "strings"
     "unicode/utf8"
 )
 
 func TestValidDeviceMediaAction(t *testing.T) {
-    for _, action := range []string{"get_state", "get_playlist", "select", "resume", "pause", "stop", "prev", "next"} {
+    for _, action := range []string{"get_state", "get_playlist", "select", "seek", "resume", "pause", "stop", "prev", "next"} {
         if !validDeviceMediaAction(action) {
             t.Fatalf("%s should be accepted", action)
         }
     }
-    for _, action := range []string{"seek", "", "play_playlist", "delete", "run"} {
+    for _, action := range []string{"", "play_playlist", "delete", "run"} {
         if validDeviceMediaAction(action) {
             t.Fatalf("%s should be rejected", action)
         }
@@ -62,5 +63,35 @@ func TestDeviceMediaPlaylistPageKeepsUTF8(t *testing.T) {
     page := deviceMediaPage(items, 0)
     if len([]rune(page[0].Title)) != 48 || !utf8.ValidString(page[0].Title) {
         t.Fatalf("UTF-8 page title invalid: %+v", page[0])
+    }
+}
+
+func TestSeekRequiresValidPositionAndQueue(t *testing.T) {
+    coordinator := newMediaPlaybackCoordinator()
+    runtime := coordinator.getOrCreateRuntime("seek-test")
+    for _, target := range []int64{-1, 2*60*60*1000 + 1, 0} {
+        if err := runtime.Seek(context.Background(), target, mediaPlaybackAudioConfig{}); err == nil {
+            t.Fatalf("seek %d without queue should fail", target)
+        }
+    }
+}
+
+func TestDurationIsUpdatedOnlyForCurrentPlayback(t *testing.T) {
+    coordinator := newMediaPlaybackCoordinator()
+    runtime := coordinator.getOrCreateRuntime("duration-test")
+    current := newActiveMediaPlayback(context.Background())
+    old := newActiveMediaPlayback(context.Background())
+    defer current.cancel()
+    defer old.cancel()
+    runtime.mu.Lock()
+    runtime.active = current
+    runtime.mu.Unlock()
+    runtime.setDecodedDuration(old, 12000)
+    if runtime.GetState().DurationMs != 0 {
+        t.Fatal("stale decoder must not update duration")
+    }
+    runtime.setDecodedDuration(current, 12000)
+    if runtime.GetState().DurationMs != 12000 {
+        t.Fatal("current decoder duration was lost")
     }
 }
