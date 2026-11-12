@@ -25,7 +25,7 @@ type deviceMediaStateMessage struct {
     PositionMs     int64                      `json:"position_ms"`
     CurrentIndex   int                        `json:"current_index"`
     PlaylistLength int                        `json:"playlist_length"`
-    PageOffset     int                        `json:"page_offset,omitempty"`
+    PageOffset     *int                       `json:"page_offset,omitempty"`
     Playlist       []deviceMediaPlaylistEntry `json:"playlist,omitempty"`
     Error          string                     `json:"error,omitempty"`
 }
@@ -124,7 +124,7 @@ func (c *ChatManager) sendDeviceMediaState(session *ChatSession, errMessage stri
         reply.CurrentIndex = index
         reply.PlaylistLength = len(items)
         if pageOffset >= 0 {
-            reply.PageOffset = pageOffset
+            reply.PageOffset = &pageOffset
             reply.Playlist = deviceMediaPage(items, pageOffset)
         }
     }
