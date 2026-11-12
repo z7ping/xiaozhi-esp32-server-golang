@@ -39,9 +39,9 @@ func TestDeviceMediaStateWireFormat(t *testing.T) {
 }
 
 func TestDeviceMediaPlaylistPageIsBounded(t *testing.T) {
-    items := make([]MediaPlaylistItem, 19)
+    items := make([]deviceMediaQueueSummary, 19)
     for index := range items {
-        items[index].Source.Title = "第九首测试音乐"
+        items[index].Title = "第九首测试音乐"
     }
     page := deviceMediaPage(items, 6)
     if len(page) != 6 || page[0].Index != 6 || page[5].Index != 11 {
@@ -57,9 +57,9 @@ func TestDeviceMediaPlaylistPageIsBounded(t *testing.T) {
 }
 
 func TestDeviceMediaPlaylistPageKeepsUTF8(t *testing.T) {
-    items := []MediaPlaylistItem{{Source: MediaSourceDescriptor{
+    items := []deviceMediaQueueSummary{{
         Title: "演奏" + strings.Repeat("乐", 60),
-    }}}
+    }}
     page := deviceMediaPage(items, 0)
     if len([]rune(page[0].Title)) != 48 || !utf8.ValidString(page[0].Title) {
         t.Fatalf("UTF-8 page title invalid: %+v", page[0])
@@ -93,5 +93,29 @@ func TestDurationIsUpdatedOnlyForCurrentPlayback(t *testing.T) {
     runtime.setDecodedDuration(current, 12000)
     if runtime.GetState().DurationMs != 12000 {
         t.Fatal("current decoder duration was lost")
+    }
+}
+
+func TestDeviceMediaSnapshotDoesNotCopyInlineAudioBytes(t *testing.T) {
+    coordinator := newMediaPlaybackCoordinator()
+    runtime := coordinator.getOrCreateRuntime("metadata-only-device")
+    runtime.mu.Lock()
+    runtime.mode = mediaPlaybackModeStandalone
+    runtime.playbackIndex = 0
+    runtime.state.CurrentTitle = "音频片段"
+    runtime.standaloneItems = []MediaPlaylistItem{{
+        Source: MediaSourceDescriptor{
+            Title: "音频片段",
+            Inline: &InlineAudioSource{Data: make([]byte, 1024*1024)},
+        },
+    }}
+    runtime.mu.Unlock()
+    player := &SessionMediaPlayer{runtime: runtime}
+    state, queue, index := player.GetDeviceMediaSnapshot()
+    if index != 0 || len(queue) != 1 || queue[0].Title != "音频片段" {
+        t.Fatalf("wrong device queue metadata: %d %+v", index, queue)
+    }
+    if len(state.Playlist) != 0 {
+        t.Fatal("device snapshot must not carry full media descriptors")
     }
 }
