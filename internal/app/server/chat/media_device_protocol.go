@@ -113,7 +113,9 @@ func (c *ChatManager) HandleDeviceMediaMessage(action string, index *int, positi
         }
         errMessage := ""
         if err != nil {
-            errMessage = err.Error()
+            // The full error may contain authenticated source URLs or MCP
+            // resource addresses. Log server-side, send no secrets to device.
+            errMessage = "媒体操作失败，请重试"
             log.Warnf("设备 %s 触摸媒体控制 %s 失败: %v", c.DeviceID, action, err)
         }
         pageOffset := -1
@@ -134,7 +136,9 @@ func (c *ChatManager) sendDeviceMediaState(session *ChatSession, errMessage stri
     if session != nil && session.mediaPlayer != nil {
         state, items, index := session.mediaPlayer.GetDeviceMediaSnapshot()
         reply.State = state.Status.String()
-        reply.Title = state.CurrentTitle
+        title := []rune(state.CurrentTitle)
+        if len(title) > 64 { title = title[:64] }
+        reply.Title = string(title)
         reply.PositionMs = state.PositionMs
         reply.DurationMs = state.DurationMs
         if reply.DurationMs == 0 && index >= 0 && index < len(items) {
