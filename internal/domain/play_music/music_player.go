@@ -63,7 +63,7 @@ func PlayMusicStreamWithDuration(ctx context.Context, url string, sampleRate int
 	startTs := time.Now().UnixMilli()
 
 	// 创建HTTP请求
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %v", err)
 	}
