@@ -127,7 +127,9 @@ func (c *ChatManager) sendDeviceMediaState(session *ChatSession, errMessage stri
         reply.State = state.Status.String()
         reply.Title = state.CurrentTitle
         reply.PositionMs = state.PositionMs
-        if index >= 0 && index < len(items) && items[index].Source.Meta != nil {
+        reply.DurationMs = state.DurationMs
+        if reply.DurationMs == 0 && index >= 0 && index < len(items) &&
+            items[index].Source.Meta != nil {
             raw := strings.TrimSpace(items[index].Source.Meta["duration_ms"])
             if duration, err := strconv.ParseInt(raw, 10, 64); err == nil &&
                duration > 0 && duration <= 24*60*60*1000 {
