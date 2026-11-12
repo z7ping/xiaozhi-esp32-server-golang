@@ -9,7 +9,7 @@ import (
     log "xiaozhi-esp32-server-golang/logger"
 )
 
-const deviceMediaPageSize = 8
+const deviceMediaPageSize = 6
 
 // Device media controls run on the existing device command channel.
 // Only bounded metadata is sent to ESP32, never audio or source URLs.
