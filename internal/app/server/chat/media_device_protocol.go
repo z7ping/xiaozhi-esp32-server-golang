@@ -5,6 +5,7 @@ import (
     "encoding/json"
     "fmt"
     "strings"
+    "strconv"
 
     log "xiaozhi-esp32-server-golang/logger"
 )
@@ -23,6 +24,7 @@ type deviceMediaStateMessage struct {
     State          string                     `json:"state"`
     Title          string                     `json:"title,omitempty"`
     PositionMs     int64                      `json:"position_ms"`
+    DurationMs     int64                      `json:"duration_ms"`
     CurrentIndex   int                        `json:"current_index"`
     PlaylistLength int                        `json:"playlist_length"`
     PageOffset     *int                       `json:"page_offset,omitempty"`
@@ -59,7 +61,9 @@ func deviceMediaPage(items []MediaPlaylistItem, offset int) []deviceMediaPlaylis
     return page
 }
 
-func (c *ChatManager) HandleDeviceMediaMessage(action string, index int) error {
+// The client is authenticated by the existing device session; it cannot pick a
+// different playback runtime, audio URL or server-side file path.
+func (c *ChatManager) HandleDeviceMediaMessage(action string, index int, positionMs int64) error {
     action = strings.ToLower(strings.TrimSpace(action))
     if !validDeviceMediaAction(action) {
         return fmt.Errorf("unsupported device media action: %q", action)
@@ -92,6 +96,8 @@ func (c *ChatManager) HandleDeviceMediaMessage(action string, index int) error {
         var err error
         if action == "select" {
             err = session.mediaPlayer.PlayQueueIndex(ctx, index)
+        } else if action == "seek" {
+            err = session.mediaPlayer.Seek(ctx, positionMs)
         } else {
             _, err = controlMusicPlayback(ctx, session, &MusicPlaybackControlParams{Action: action})
         }
@@ -121,6 +127,13 @@ func (c *ChatManager) sendDeviceMediaState(session *ChatSession, errMessage stri
         reply.State = state.Status.String()
         reply.Title = state.CurrentTitle
         reply.PositionMs = state.PositionMs
+        if index >= 0 && index < len(items) && items[index].Source.Meta != nil {
+            raw := strings.TrimSpace(items[index].Source.Meta["duration_ms"])
+            if duration, err := strconv.ParseInt(raw, 10, 64); err == nil &&
+               duration > 0 && duration <= 24*60*60*1000 {
+                reply.DurationMs = duration
+            }
+        }
         reply.CurrentIndex = index
         reply.PlaylistLength = len(items)
         if pageOffset >= 0 {
