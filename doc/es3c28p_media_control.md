@@ -2,6 +2,16 @@
 
 复用小智现有设备 WebSocket / MQTT 命令通道；音频仍沿用原 Opus/TTS 发送链路，Go 服务端的 MediaPlayer 是唯一播放状态源。
 
+## 能力协商 / 向后兼容
+
+新 Go 服务端在已有 `hello` 响应中返回：
+```json
+{"type":"hello","features":{"media_control":true}}
+```
+其余握手字段（`transport`、`session_id`、`audio_params`、MQTT 的 `udp`）仍按原协议返回。
+
+ESP32 只有收到明确的布尔 `true` 才发送 `media` 控制。旧服务端未声明时自动关闭触摸控制和轮询，不影响传统 `listen`、`tts`、`mcp` 和原音频通道。断线和新 hello 会清空并重新解析能力。旧固件收到 `features` 这个可选字段可直接忽略。无会话/未握手时不能触发媒体控制。
+
 ## 设备 → 服务端
 
 ```json
