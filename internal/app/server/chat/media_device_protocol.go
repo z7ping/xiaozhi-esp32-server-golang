@@ -40,7 +40,7 @@ func validDeviceMediaAction(action string) bool {
     return false
 }
 
-func deviceMediaPage(items []MediaPlaylistItem, offset int) []deviceMediaPlaylistEntry {
+func deviceMediaPage(items []deviceMediaQueueSummary, offset int) []deviceMediaPlaylistEntry {
     if offset < 0 || offset >= len(items) {
         return nil
     }
@@ -50,7 +50,7 @@ func deviceMediaPage(items []MediaPlaylistItem, offset int) []deviceMediaPlaylis
     }
     page := make([]deviceMediaPlaylistEntry, 0, end-offset)
     for index := offset; index < end; index++ {
-        title := []rune(items[index].Source.Title)
+        title := []rune(items[index].Title)
         if len(title) > 48 {
             title = title[:48]
         }
@@ -122,15 +122,13 @@ func (c *ChatManager) sendDeviceMediaState(session *ChatSession, errMessage stri
         Type: "media", State: "idle", CurrentIndex: -1, Error: errMessage,
     }
     if session != nil && session.mediaPlayer != nil {
-        state := session.mediaPlayer.GetState()
-        items, index := session.mediaPlayer.GetQueueSnapshot()
+        state, items, index := session.mediaPlayer.GetDeviceMediaSnapshot()
         reply.State = state.Status.String()
         reply.Title = state.CurrentTitle
         reply.PositionMs = state.PositionMs
         reply.DurationMs = state.DurationMs
-        if reply.DurationMs == 0 && index >= 0 && index < len(items) &&
-            items[index].Source.Meta != nil {
-            raw := strings.TrimSpace(items[index].Source.Meta["duration_ms"])
+        if reply.DurationMs == 0 && index >= 0 && index < len(items) {
+            raw := strings.TrimSpace(items[index].DurationMs)
             if duration, err := strconv.ParseInt(raw, 10, 64); err == nil &&
                duration > 0 && duration <= 24*60*60*1000 {
                 reply.DurationMs = duration
