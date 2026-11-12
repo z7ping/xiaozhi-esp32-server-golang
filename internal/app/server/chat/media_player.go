@@ -614,18 +614,50 @@ func (p *SessionMediaPlayer) GetState() MediaPlayerState {
 	return runtime.GetState()
 }
 
-// GetQueueSnapshot exposes lightweight playlist data to device controls.
-// Unlike GetState.Playlist it also covers standalone queues.
-func (p *SessionMediaPlayer) GetQueueSnapshot() ([]MediaPlaylistItem, int) {
+// Device snapshots copy only metadata, never InlineAudio.Data, MCP client
+// instances or other source payloads. Normal GetState() remains unchanged.
+type deviceMediaQueueSummary struct {
+    Title      string
+    DurationMs string
+}
+
+func (p *SessionMediaPlayer) GetDeviceMediaSnapshot() (MediaPlayerState, []deviceMediaQueueSummary, int) {
     runtime, err := p.runtimeOrErr()
     if err != nil {
-        return nil, -1
+        return MediaPlayerState{CurrentIndex: -1}, nil, -1
     }
     runtime.mu.RLock()
-    items := runtime.currentPlaybackQueueLocked()
+    state := runtime.state
+    state.Playlist = nil
     index := runtime.playbackIndex
+    mode := runtime.mode
+    agentID := runtime.playlistAgentID
+
+    appendSummary := func(items []MediaPlaylistItem) []deviceMediaQueueSummary {
+        summary := make([]deviceMediaQueueSummary, 0, len(items))
+        for _, item := range items {
+            duration := ""
+            if item.Source.Meta != nil {
+                duration = item.Source.Meta["duration_ms"]
+            }
+            summary = append(summary, deviceMediaQueueSummary{
+                Title: item.Source.Title, DurationMs: duration,
+            })
+        }
+        return summary
+    }
+
+    var summary []deviceMediaQueueSummary
+    if mode == mediaPlaybackModeAgentPlaylist && agentID != "" {
+        playlist := runtime.coordinator.getOrCreateAgentPlaylist(agentID)
+        playlist.mu.RLock()
+        summary = appendSummary(playlist.items)
+        playlist.mu.RUnlock()
+    } else if mode == mediaPlaybackModeStandalone {
+        summary = appendSummary(runtime.standaloneItems)
+    }
     runtime.mu.RUnlock()
-    return items, index
+    return state, summary, index
 }
 
 // PlayQueueIndex restarts playback at one real queue item. The server retains
