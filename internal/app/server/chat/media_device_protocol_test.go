@@ -172,3 +172,24 @@ func TestSeekPreservesPausedStatus(t *testing.T) {
     }
     stopRuntimeAndWait(t, runtime)
 }
+
+func TestMediaControlRejectsMissingRequiredArguments(t *testing.T) {
+    manager := &ChatManager{serverTransport: &ServerTransport{}}
+    invalid := int(-1)
+    tooLarge := int64(2*60*60*1000 + 1)
+    for _, tc := range []struct{
+        action string
+        index *int
+        position *int64
+    }{
+        {"select", nil, nil},
+        {"get_playlist", nil, nil},
+        {"get_playlist", &invalid, nil},
+        {"seek", nil, nil},
+        {"seek", nil, &tooLarge},
+    } {
+        if err := manager.HandleDeviceMediaMessage(tc.action, tc.index, tc.position); err == nil {
+            t.Fatalf("%s: invalid arguments should be rejected", tc.action)
+        }
+    }
+}
