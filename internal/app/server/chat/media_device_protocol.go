@@ -32,7 +32,7 @@ type deviceMediaStateMessage struct {
 
 func validDeviceMediaAction(action string) bool {
     switch action {
-    case "get_state", "get_playlist", "select", "resume", "pause", "stop", "prev", "next":
+    case "get_state", "get_playlist", "select", "seek", "resume", "pause", "stop", "prev", "next":
         return true
     }
     return false
