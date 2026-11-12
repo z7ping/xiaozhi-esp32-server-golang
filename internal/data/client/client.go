@@ -713,6 +713,6 @@ type ClientMessage struct {
 	AudioParams    *AudioFormat         `json:"audio_params,omitempty"`
 	SpeakUDPConfig *SpeakReadyUDPConfig `json:"udp_config,omitempty"`
 	PayLoad        json.RawMessage      `json:"payload,omitempty"`
-	MediaIndex     int                  `json:"index,omitempty"`
-	MediaPositionMs int64               `json:"position_ms,omitempty"`
+	MediaIndex     *int                 `json:"index,omitempty"`
+	MediaPositionMs *int64              `json:"position_ms,omitempty"`
 }
