@@ -41,9 +41,10 @@ type ChatManager struct {
 	sessionMu sync.RWMutex
 	session   *ChatSession
 
-    // Prevent overlapping touch media mutations; queued goroutines need not
-    // acquire this mutex in exact arrival order under extreme rapid tapping.
-    mediaControlMu sync.Mutex
+    // Fixed-size FIFO command queue: touch commands are processed in arrival
+    // order by a single worker instead of racing for a mutex.
+    mediaControlOnce sync.Once
+    mediaControlQueue chan deviceMediaCommand
 
 	startingSession     *ChatSession
 	startingSessionDone chan struct{}
