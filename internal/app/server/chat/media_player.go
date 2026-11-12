@@ -136,6 +136,9 @@ type activeMediaPlayback struct {
 	resumeCh chan struct{}
 
 	exclusiveHeld bool
+    // Owned by runPlayback's goroutine; device never decodes for seek.
+    seekUntilMs int64
+    skippedMs   int64
 }
 
 type mediaOutputBridge interface {
@@ -655,6 +658,38 @@ func (p *SessionMediaPlayer) PlayQueueIndex(ctx context.Context, index int) erro
     }
 }
 
+func (p *SessionMediaPlayer) Seek(ctx context.Context, positionMs int64) error {
+    runtime, err := p.runtimeOrErr()
+    if err != nil { return err }
+    return runtime.Seek(ctx, positionMs, p.audioConfig())
+}
+
+func (r *deviceMediaRuntime) Seek(ctx context.Context, positionMs int64, cfg mediaPlaybackAudioConfig) error {
+    if positionMs < 0 || positionMs > 2*60*60*1000 {
+        return fmt.Errorf("seek target out of range: %d ms", positionMs)
+    }
+    r.mu.RLock()
+    mode := r.mode
+    agentID := r.playlistAgentID
+    index := r.playbackIndex
+    items := r.currentPlaybackQueueLocked()
+    r.mu.RUnlock()
+    if index < 0 || index >= len(items) {
+        return fmt.Errorf("no current track to seek")
+    }
+    switch mode {
+    case mediaPlaybackModeAgentPlaylist:
+        return r.PlayAgentPlaylistIndexAt(ctx, agentID, index, cfg, positionMs)
+    case mediaPlaybackModeStandalone:
+        sources := make([]MediaSourceDescriptor, len(items))
+        for i, item := range items { sources[i] = item.Source }
+        _, err := r.ReplaceStandaloneQueueAndPlayWithHandleAt(ctx, sources, index, cfg, positionMs)
+        return err
+    default:
+        return fmt.Errorf("no seekable playback queue")
+    }
+}
+
 func (p *SessionMediaPlayer) HasRealtimeMcpAudioControlContext() bool {
 	runtime, err := p.runtimeOrErr()
 	if err != nil {
@@ -765,6 +800,10 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlay(ctx context.Context, 
 }
 
 func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandle(ctx context.Context, sources []MediaSourceDescriptor, startIndex int, cfg mediaPlaybackAudioConfig) (*MediaPlaybackHandle, error) {
+    return r.ReplaceStandaloneQueueAndPlayWithHandleAt(ctx, sources, startIndex, cfg, 0)
+}
+
+func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandleAt(ctx context.Context, sources []MediaSourceDescriptor, startIndex int, cfg mediaPlaybackAudioConfig, seekMs int64) (*MediaPlaybackHandle, error) {
 	if r == nil {
 		return nil, fmt.Errorf("媒体播放器未初始化")
 	}
@@ -777,6 +816,7 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandle(ctx context
 
 	items := buildMediaPlaylistItems(sources)
 	active := newActiveMediaPlayback(r.coordinator.ctx)
+    active.seekUntilMs = seekMs
 
 	r.mu.Lock()
 	oldActive, oldExclusive := r.replaceActivePlaybackLocked(active)
@@ -809,6 +849,10 @@ func (r *deviceMediaRuntime) ReplaceStandaloneQueueAndPlayWithHandle(ctx context
 }
 
 func (r *deviceMediaRuntime) PlayAgentPlaylistIndex(ctx context.Context, agentID string, startIndex int, cfg mediaPlaybackAudioConfig) error {
+    return r.PlayAgentPlaylistIndexAt(ctx, agentID, startIndex, cfg, 0)
+}
+
+func (r *deviceMediaRuntime) PlayAgentPlaylistIndexAt(ctx context.Context, agentID string, startIndex int, cfg mediaPlaybackAudioConfig, seekMs int64) error {
 	if r == nil {
 		return fmt.Errorf("媒体播放器未初始化")
 	}
@@ -826,6 +870,7 @@ func (r *deviceMediaRuntime) PlayAgentPlaylistIndex(ctx context.Context, agentID
 	}
 
 	active := newActiveMediaPlayback(r.coordinator.ctx)
+    active.seekUntilMs = seekMs
 
 	r.mu.Lock()
 	oldActive, oldExclusive := r.replaceActivePlaybackLocked(active)
@@ -1611,6 +1656,9 @@ func (r *deviceMediaRuntime) streamMediaAudio(ctx context.Context, audioChan <-c
 		}
 
 		if !ok {
+            if active.seekUntilMs > 0 {
+                return fmt.Errorf("seek target exceeds audio duration")
+            }
 			if !enqueuedFrames {
 				return nil
 			}
@@ -1619,6 +1667,14 @@ func (r *deviceMediaRuntime) streamMediaAudio(ctx context.Context, audioChan <-c
 		if len(frame) == 0 {
 			continue
 		}
+        if active.seekUntilMs > 0 {
+            active.skippedMs += frameDurationMs
+            if active.skippedMs < active.seekUntilMs {
+                continue
+            }
+            r.setSeekPosition(active, active.skippedMs)
+            active.seekUntilMs = 0
+        }
 
 		for {
 			if err := active.waitIfPaused(ctx); err != nil {
@@ -1917,6 +1973,14 @@ func (r *deviceMediaRuntime) wrapMediaAudioStream(ctx context.Context, input <-c
 	}()
 
 	return output
+}
+
+func (r *deviceMediaRuntime) setSeekPosition(active *activeMediaPlayback, positionMs int64) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    if r.active != active { return }
+    r.state.PositionMs = positionMs
+    r.state.UpdatedAt = time.Now().UnixMilli()
 }
 
 func (r *deviceMediaRuntime) incrementPlaybackPosition(active *activeMediaPlayback, deltaMs int64) {
