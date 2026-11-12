@@ -86,4 +86,6 @@ type ServerMessage struct {
 	AutoListen  *bool                    `json:"auto_listen,omitempty"`
 	Udp         *UdpConfig               `json:"udp,omitempty"`
 	PayLoad     json.RawMessage          `json:"payload,omitempty"`
+    // Optional additive hello capability. Legacy clients ignore unknown fields.
+    Features    map[string]bool          `json:"features,omitempty"`
 }
