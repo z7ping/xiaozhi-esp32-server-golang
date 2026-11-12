@@ -29,6 +29,7 @@ const (
 	MessageTypeListen     = "listen"      // 监听消息
 	MessageTypeIot        = "iot"         // 物联网消息
 	MessageTypeMcp        = "mcp"         // MCP消息
+    MessageTypeMedia      = "media"       // 设备端媒体状态/控制
 	MessageTypeGoodBye    = "goodbye"     // 再见消息
 	MessageTypeSpeakReady = "speak_ready" // 设备已准备好接收主动播报
 )
