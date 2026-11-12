@@ -8,6 +8,7 @@ import (
     "unicode/utf8"
 
     "xiaozhi-esp32-server-golang/internal/domain/play_music"
+    msg "xiaozhi-esp32-server-golang/internal/data/msg"
 )
 
 func TestValidDeviceMediaAction(t *testing.T) {
@@ -191,5 +192,56 @@ func TestMediaControlRejectsMissingRequiredArguments(t *testing.T) {
         if err := manager.HandleDeviceMediaMessage(tc.action, tc.index, tc.position); err == nil {
             t.Fatalf("%s: invalid arguments should be rejected", tc.action)
         }
+    }
+}
+
+func TestMediaControlHelloCompatibility(t *testing.T) {
+    cases := []struct {
+        name string
+        response msg.ServerMessage
+        supported bool
+    }{
+        {
+            name: "new server",
+            response: msg.ServerMessage{
+                Type: msg.MessageTypeHello,
+                Features: map[string]bool{"media_control": true},
+            },
+            supported: true,
+        },
+        {
+            name: "legacy server without features",
+            response: msg.ServerMessage{Type: msg.MessageTypeHello},
+            supported: false,
+        },
+        {
+            name: "server without media capability",
+            response: msg.ServerMessage{
+                Type: msg.MessageTypeHello,
+                Features: map[string]bool{"mcp": true},
+            },
+            supported: false,
+        },
+        {
+            name: "explicit denial",
+            response: msg.ServerMessage{
+                Type: msg.MessageTypeHello,
+                Features: map[string]bool{"media_control": false},
+            },
+            supported: false,
+        },
+    }
+    for _, tc := range cases {
+        t.Run(tc.name, func(t *testing.T) {
+            encoded, err := json.Marshal(tc.response)
+            if err != nil { t.Fatal(err) }
+            var decoded struct {
+                Features map[string]bool `json:"features"`
+            }
+            if err := json.Unmarshal(encoded, &decoded); err != nil { t.Fatal(err) }
+            if decoded.Features["media_control"] != tc.supported {
+                t.Fatalf("media control compatibility mismatch: %s", encoded)
+            }
+        })
     }
 }
