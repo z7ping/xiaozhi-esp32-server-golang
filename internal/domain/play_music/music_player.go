@@ -48,6 +48,10 @@ func getHTTPClient() *http.Client {
 // frameDuration: 每帧时长（毫秒），默认20ms
 // audioFormat: 音频格式，支持 "mp3"
 func PlayMusicStream(ctx context.Context, url string, sampleRate int, frameDuration int, audioFormat string) (outputChan chan []byte, err error) {
+    return PlayMusicStreamWithDuration(ctx, url, sampleRate, frameDuration, audioFormat, nil)
+}
+
+func PlayMusicStreamWithDuration(ctx context.Context, url string, sampleRate int, frameDuration int, audioFormat string, onDuration func(int64)) (outputChan chan []byte, err error) {
 	// 参数校验和默认值设置
 	if frameDuration <= 0 {
 		frameDuration = 20 // 默认20ms帧时长
@@ -59,7 +63,7 @@ func PlayMusicStream(ctx context.Context, url string, sampleRate int, frameDurat
 	startTs := time.Now().UnixMilli()
 
 	// 创建HTTP请求
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %v", err)
 	}
@@ -128,7 +132,8 @@ func PlayMusicStream(ctx context.Context, url string, sampleRate int, frameDurat
 			}
 
 			// 启动解码过程
-			if err := mp3Decoder.Run(startTs); err != nil {
+			mp3Decoder.WithDurationCallback(onDuration)
+            if err := mp3Decoder.Run(startTs); err != nil {
 				log.Errorf("MP3解码失败: %v", err)
 				return
 			}
@@ -150,6 +155,10 @@ func PlayMusicStream(ctx context.Context, url string, sampleRate int, frameDurat
 }
 
 func PlayMusicFromAudioData(ctx context.Context, audioData []byte, sampleRate int, frameDuration int, audioFormat string) (outputChan chan []byte, err error) {
+    return PlayMusicFromAudioDataWithDuration(ctx, audioData, sampleRate, frameDuration, audioFormat, nil)
+}
+
+func PlayMusicFromAudioDataWithDuration(ctx context.Context, audioData []byte, sampleRate int, frameDuration int, audioFormat string, onDuration func(int64)) (outputChan chan []byte, err error) {
 	// 参数校验和默认值设置
 	if frameDuration <= 0 {
 		frameDuration = 20 // 默认20ms帧时长
@@ -188,7 +197,8 @@ func PlayMusicFromAudioData(ctx context.Context, audioData []byte, sampleRate in
 			}
 
 			// 启动解码过程
-			if err := mp3Decoder.Run(startTs); err != nil {
+			mp3Decoder.WithDurationCallback(onDuration)
+            if err := mp3Decoder.Run(startTs); err != nil {
 				log.Errorf("MP3解码失败: %v", err)
 				return
 			}
@@ -209,6 +219,10 @@ func PlayMusicFromAudioData(ctx context.Context, audioData []byte, sampleRate in
 }
 
 func PlayMusicFromPipe(ctx context.Context, pipeReader *io.PipeReader, sampleRate int, frameDuration int, audioFormat string) (outputChan chan []byte, err error) {
+    return PlayMusicFromPipeWithDuration(ctx, pipeReader, sampleRate, frameDuration, audioFormat, nil)
+}
+
+func PlayMusicFromPipeWithDuration(ctx context.Context, pipeReader *io.PipeReader, sampleRate int, frameDuration int, audioFormat string, onDuration func(int64)) (outputChan chan []byte, err error) {
 	// 参数校验和默认值设置
 	if frameDuration <= 0 {
 		frameDuration = 20 // 默认20ms帧时长
@@ -238,7 +252,8 @@ func PlayMusicFromPipe(ctx context.Context, pipeReader *io.PipeReader, sampleRat
 			}
 
 			// 启动解码过程
-			if err := mp3Decoder.Run(startTs); err != nil {
+			mp3Decoder.WithDurationCallback(onDuration)
+            if err := mp3Decoder.Run(startTs); err != nil {
 				log.Errorf("MP3解码失败: %v", err)
 				return
 			}
