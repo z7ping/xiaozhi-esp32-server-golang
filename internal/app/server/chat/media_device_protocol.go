@@ -1,7 +1,6 @@
 package chat
 
 import (
-    "context"
     "encoding/json"
     "fmt"
     "strings"
@@ -11,6 +10,14 @@ import (
 )
 
 const deviceMediaPageSize = 6
+const deviceMediaControlQueueCapacity = 8
+
+type deviceMediaCommand struct {
+    session *ChatSession
+    action string
+    index int
+    positionMs int64
+}
 
 // Device media controls run on the existing device command channel.
 // Only bounded metadata is sent to ESP32, never audio or source URLs.
@@ -88,45 +95,65 @@ func (c *ChatManager) HandleDeviceMediaMessage(action string, index *int, positi
         return c.sendDeviceMediaState(session, "", *index)
     }
 
-    // Take copies before the command is scheduled; never use decoded message
-    // pointers in the goroutine after the original JSON is released.
-    selectedIndex := -1
-    if index != nil { selectedIndex = *index }
-    targetMs := int64(-1)
-    if positionMs != nil { targetMs = *positionMs }
+    // Device messages arrive on one receive loop. Enqueue in that order,
+    // without spawning competing goroutines for rapid user taps.
+    if c.ctx == nil {
+        return fmt.Errorf("device session context unavailable")
+    }
+    cmd := deviceMediaCommand{session: session, action: action, index: -1, positionMs: -1}
+    if index != nil { cmd.index = *index }
+    if positionMs != nil { cmd.positionMs = *positionMs }
+    c.mediaControlOnce.Do(func() {
+        c.mediaControlQueue = make(chan deviceMediaCommand, deviceMediaControlQueueCapacity)
+        go c.runDeviceMediaControls()
+    })
+    select {
+    case c.mediaControlQueue <- cmd:
+        return nil
+    default:
+        return fmt.Errorf("device media command queue full")
+    }
+}
 
-    go func() {
-        c.mediaControlMu.Lock()
-        defer c.mediaControlMu.Unlock()
-        if c.managerClosing.Load() { return }
-        ctx := c.ctx
-        if ctx == nil {
-            ctx = context.Background()
+func (c *ChatManager) runDeviceMediaControls() {
+    ctx := c.ctx
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case cmd := <-c.mediaControlQueue:
+            if c.managerClosing.Load() {
+                return
+            }
+            // Never execute commands from a previous device session.
+            if c.GetSession() != cmd.session {
+                continue
+            }
+            var err error
+            switch cmd.action {
+            case "select":
+                err = cmd.session.mediaPlayer.PlayQueueIndex(ctx, cmd.index)
+            case "seek":
+                err = cmd.session.mediaPlayer.Seek(ctx, cmd.positionMs)
+            default:
+                _, err = controlMusicPlayback(ctx, cmd.session,
+                    &MusicPlaybackControlParams{Action: cmd.action})
+            }
+            message := ""
+            if err != nil {
+                // Errors can contain private media URLs and MCP parameters.
+                message = "媒体操作失败，请重试"
+                log.Warnf("设备 %s 触摸媒体控制 %s 失败: %v", c.DeviceID, cmd.action, err)
+            }
+            offset := -1
+            if cmd.action == "select" && err == nil {
+                offset = (cmd.index / deviceMediaPageSize) * deviceMediaPageSize
+            }
+            if err := c.sendDeviceMediaState(cmd.session, message, offset); err != nil {
+                log.Debugf("设备 %s 回传媒体状态失败: %v", c.DeviceID, err)
+            }
         }
-        var err error
-        if action == "select" {
-            err = session.mediaPlayer.PlayQueueIndex(ctx, selectedIndex)
-        } else if action == "seek" {
-            err = session.mediaPlayer.Seek(ctx, targetMs)
-        } else {
-            _, err = controlMusicPlayback(ctx, session, &MusicPlaybackControlParams{Action: action})
-        }
-        errMessage := ""
-        if err != nil {
-            // The full error may contain authenticated source URLs or MCP
-            // resource addresses. Log server-side, send no secrets to device.
-            errMessage = "媒体操作失败，请重试"
-            log.Warnf("设备 %s 触摸媒体控制 %s 失败: %v", c.DeviceID, action, err)
-        }
-        pageOffset := -1
-        if action == "select" && err == nil {
-            pageOffset = (selectedIndex / deviceMediaPageSize) * deviceMediaPageSize
-        }
-        if err := c.sendDeviceMediaState(session, errMessage, pageOffset); err != nil {
-            log.Debugf("设备 %s 回传媒体状态失败: %v", c.DeviceID, err)
-        }
-    }()
-    return nil
+    }
 }
 
 func (c *ChatManager) sendDeviceMediaState(session *ChatSession, errMessage string, pageOffset int) error {
