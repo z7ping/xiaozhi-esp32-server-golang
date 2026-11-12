@@ -610,6 +610,51 @@ func (p *SessionMediaPlayer) GetState() MediaPlayerState {
 	return runtime.GetState()
 }
 
+// GetQueueSnapshot exposes lightweight playlist data to device controls.
+// Unlike GetState.Playlist it also covers standalone queues.
+func (p *SessionMediaPlayer) GetQueueSnapshot() ([]MediaPlaylistItem, int) {
+    runtime, err := p.runtimeOrErr()
+    if err != nil {
+        return nil, -1
+    }
+    runtime.mu.RLock()
+    items := runtime.currentPlaybackQueueLocked()
+    index := runtime.playbackIndex
+    runtime.mu.RUnlock()
+    return items, index
+}
+
+// PlayQueueIndex restarts playback at one real queue item. The server retains
+// ownership of all sources, decoding and streaming; ESP32 receives only status.
+func (p *SessionMediaPlayer) PlayQueueIndex(ctx context.Context, index int) error {
+    runtime, err := p.runtimeOrErr()
+    if err != nil {
+        return err
+    }
+    runtime.mu.RLock()
+    mode := runtime.mode
+    agentID := runtime.playlistAgentID
+    items := runtime.currentPlaybackQueueLocked()
+    runtime.mu.RUnlock()
+
+    if index < 0 || index >= len(items) {
+        return fmt.Errorf("invalid playlist item index: %d", index)
+    }
+    cfg := p.audioConfig()
+    switch mode {
+    case mediaPlaybackModeAgentPlaylist:
+        return runtime.PlayAgentPlaylistIndex(ctx, agentID, index, cfg)
+    case mediaPlaybackModeStandalone:
+        sources := make([]MediaSourceDescriptor, len(items))
+        for i, item := range items {
+            sources[i] = item.Source
+        }
+        return runtime.ReplaceStandaloneQueueAndPlay(ctx, sources, index, cfg)
+    default:
+        return fmt.Errorf("no playable media queue")
+    }
+}
+
 func (p *SessionMediaPlayer) HasRealtimeMcpAudioControlContext() bool {
 	runtime, err := p.runtimeOrErr()
 	if err != nil {
