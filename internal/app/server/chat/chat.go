@@ -41,7 +41,8 @@ type ChatManager struct {
 	sessionMu sync.RWMutex
 	session   *ChatSession
 
-    // Serialize touch transport commands so concurrent taps cannot reorder seek/skip/stop.
+    // Prevent overlapping touch media mutations; queued goroutines need not
+    // acquire this mutex in exact arrival order under extreme rapid tapping.
     mediaControlMu sync.Mutex
 
 	startingSession     *ChatSession
