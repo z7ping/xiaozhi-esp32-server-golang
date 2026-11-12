@@ -41,6 +41,9 @@ type ChatManager struct {
 	sessionMu sync.RWMutex
 	session   *ChatSession
 
+    // Serialize touch transport commands so concurrent taps cannot reorder seek/skip/stop.
+    mediaControlMu sync.Mutex
+
 	startingSession     *ChatSession
 	startingSessionDone chan struct{}
 
