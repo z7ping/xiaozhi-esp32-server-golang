@@ -1764,34 +1764,37 @@ func (r *deviceMediaRuntime) waitMediaSentenceEnd(ctx context.Context, active *a
 func (r *deviceMediaRuntime) openSourceAudioStream(ctx context.Context, source MediaSourceDescriptor, active *activeMediaPlayback) (<-chan []byte, error) {
 	cfg := r.currentAudioConfig()
 	audioFormat := util.GetAudioFormatByMimeType(source.MIMEType)
+    onDuration := func(durationMs int64) {
+        r.setDecodedDuration(active, durationMs)
+    }
 
 	switch source.SourceType {
 	case MediaSourceTypeInlineAudio:
 		if source.Inline == nil || len(source.Inline.Data) == 0 {
 			return nil, fmt.Errorf("inline 音频数据为空")
 		}
-		return play_music.PlayMusicFromAudioData(ctx, source.Inline.Data, cfg.SampleRate, cfg.FrameDuration, audioFormat)
+		return play_music.PlayMusicFromAudioDataWithDuration(ctx, source.Inline.Data, cfg.SampleRate, cfg.FrameDuration, audioFormat, onDuration)
 	case MediaSourceTypeHTTPURL:
 		if source.HTTP == nil || strings.TrimSpace(source.HTTP.URL) == "" {
 			return nil, fmt.Errorf("HTTP 音频地址为空")
 		}
-		return play_music.PlayMusicStream(ctx, source.HTTP.URL, cfg.SampleRate, cfg.FrameDuration, audioFormat)
+		return play_music.PlayMusicStreamWithDuration(ctx, source.HTTP.URL, cfg.SampleRate, cfg.FrameDuration, audioFormat, onDuration)
 	case MediaSourceTypeLocalFile:
 		if source.Local == nil || strings.TrimSpace(source.Local.Path) == "" {
 			return nil, fmt.Errorf("本地音频路径为空")
 		}
-		return openLocalMediaFileStream(ctx, source.Local.Path, cfg.SampleRate, cfg.FrameDuration, audioFormat)
+		return openLocalMediaFileStream(ctx, source.Local.Path, cfg.SampleRate, cfg.FrameDuration, audioFormat, onDuration)
 	case MediaSourceTypeMCPResource:
 		if source.MCP == nil {
 			return nil, fmt.Errorf("MCP 音频源为空")
 		}
-		return r.openMCPResourceAudioStream(ctx, source.MCP, active, cfg.SampleRate, cfg.FrameDuration, audioFormat)
+		return r.openMCPResourceAudioStream(ctx, source.MCP, active, cfg.SampleRate, cfg.FrameDuration, audioFormat, onDuration)
 	default:
 		return nil, fmt.Errorf("不支持的媒体源类型: %s", source.SourceType)
 	}
 }
 
-func openLocalMediaFileStream(ctx context.Context, path string, sampleRate int, frameDuration int, audioFormat string) (<-chan []byte, error) {
+func openLocalMediaFileStream(ctx context.Context, path string, sampleRate int, frameDuration int, audioFormat string, onDuration func(int64)) (<-chan []byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("打开本地音频文件失败: %v", err)
@@ -1806,14 +1809,15 @@ func openLocalMediaFileStream(ctx context.Context, path string, sampleRate int, 
 			close(outputChan)
 			return
 		}
-		if err := decoder.Run(time.Now().UnixMilli()); err != nil && !errors.Is(err, context.Canceled) {
+		decoder.WithDurationCallback(onDuration)
+        if err := decoder.Run(time.Now().UnixMilli()); err != nil && !errors.Is(err, context.Canceled) {
 			log.Errorf("本地音频解码失败: %v", err)
 		}
 	}()
 	return outputChan, nil
 }
 
-func (r *deviceMediaRuntime) openMCPResourceAudioStream(ctx context.Context, source *MCPMediaSource, active *activeMediaPlayback, sampleRate int, frameDuration int, audioFormat string) (<-chan []byte, error) {
+func (r *deviceMediaRuntime) openMCPResourceAudioStream(ctx context.Context, source *MCPMediaSource, active *activeMediaPlayback, sampleRate int, frameDuration int, audioFormat string, onDuration func(int64)) (<-chan []byte, error) {
 	if source == nil {
 		return nil, fmt.Errorf("MCP 音频源为空")
 	}
@@ -1822,7 +1826,7 @@ func (r *deviceMediaRuntime) openMCPResourceAudioStream(ctx context.Context, sou
 	}
 
 	pipeReader, pipeWriter := io.Pipe()
-	audioChan, err := play_music.PlayMusicFromPipe(ctx, pipeReader, sampleRate, frameDuration, audioFormat)
+	audioChan, err := play_music.PlayMusicFromPipeWithDuration(ctx, pipeReader, sampleRate, frameDuration, audioFormat, onDuration)
 	if err != nil {
 		pipeWriter.CloseWithError(err)
 		return nil, fmt.Errorf("创建 MCP 音频解码流失败: %v", err)
