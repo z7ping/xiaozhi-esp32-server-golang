@@ -163,6 +163,11 @@ func (c *ChatManager) sendDeviceMediaState(session *ChatSession, errMessage stri
     if session != nil && session.mediaPlayer != nil {
         state, items, index := session.mediaPlayer.GetDeviceMediaSnapshot()
         reply.State = state.Status.String()
+        // Errors such as an overlong seek can occur asynchronously after the
+        // command was accepted. Report a safe status on subsequent polls.
+        if reply.Error == "" && state.ErrMsg != "" {
+            reply.Error = "播放失败，请重新选择歌曲"
+        }
         title := []rune(state.CurrentTitle)
         if len(title) > 64 { title = title[:64] }
         reply.Title = string(title)
