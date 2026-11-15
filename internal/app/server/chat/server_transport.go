@@ -148,6 +148,7 @@ func (s *ServerTransport) SendHello(transportType string, audioFormat *types_aud
 		Transport:   transportType,
 		AudioFormat: audioFormat,
 		Udp:         udpConfig,
+        Features:    map[string]bool{"media_control": true},
 	}
 	bytes, err := json.Marshal(msg)
 	if err != nil {

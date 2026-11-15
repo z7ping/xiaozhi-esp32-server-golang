@@ -134,6 +134,7 @@ type AudioDecoder struct {
 	AudioFormat        string
 	targetSampleRate   int
 	TargetAudioFormat  string
+    onDuration        func(int64) // Optional real decoder length in milliseconds.
 
 	outputOpusChan chan []byte     //opus一帧一帧的输出
 	ctx            context.Context // 新增：上下文控制
@@ -169,6 +170,11 @@ func CreateAudioDecoderWithSampleRate(ctx context.Context, pipeReader io.ReadClo
 func (d *AudioDecoder) WithFormat(format beep.Format) *AudioDecoder {
 	d.format = format
 	return d
+}
+
+func (d *AudioDecoder) WithDurationCallback(callback func(int64)) *AudioDecoder {
+    d.onDuration = callback
+    return d
 }
 
 func (d *AudioDecoder) WithTargetAudioFormat(targetAudioFormat string) *AudioDecoder {
@@ -1164,6 +1170,15 @@ func (d *AudioDecoder) RunMp3Decoder(startTs int64) error {
 	log.Debugf("MP3格式: %d Hz, %d 通道", format.SampleRate, format.NumChannels)
 	d.streamer = decoder
 	d.format = format
+    if d.onDuration != nil && format.SampleRate > 0 {
+        samples := decoder.Len()
+        if samples > 0 {
+            durationMs := int64(samples) * 1000 / int64(format.SampleRate)
+            if durationMs > 0 && durationMs <= 24*60*60*1000 {
+                d.onDuration(durationMs)
+            }
+        }
+    }
 
 	// 流式解码MP3
 	defer func() {
